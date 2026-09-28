@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leftover</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <header class="top">
+      <div class="brand">
+        <h1>Leftover</h1>
+        <p class="tagline">Finds what uninstalled apps, caches, dev projects and games left behind.</p>
+      </div>
+      <button id="scan" class="primary" type="button">Scan</button>
+    </header>
+
+    <main>
+      <section id="intro" class="intro">
+        <p>
+          Leftover checks your user folders against what is actually installed: programs, shortcuts,
+          running apps and Steam games. Then it explains what each item is and what happens if you remove it.
+        </p>
+        <p class="muted">Scanning only reads. Nothing is removed until you choose items and confirm.</p>
+      </section>
+
+      <p id="status" class="status" role="status" hidden></p>
+
+      <section id="outcome" class="outcome" hidden>
+        <div class="outcome-head">
+          <p id="outcome-text"></p>
+          <button id="undo" class="secondary" type="button" hidden>Undo</button>
+        </div>
+        <ul id="outcome-problems" class="problems"></ul>
+      </section>
+
+      <section id="summary" class="summary" hidden></section>
+      <div id="results"></div>
+      <footer id="footer" class="footer" hidden></footer>
+    </main>
+
+    <div id="selection-bar" class="selection-bar" hidden>
+      <span id="selection-text"></span>
+      <label class="toggle" title="Safe-to-clear items rebuild themselves, so they skip the Recycle Bin. Everything else always goes to the Recycle Bin.">
+        <input id="permanent" type="checkbox" checked />
+        Delete safe-to-clear items permanently
+      </label>
+      <button id="clear-selection" class="secondary" type="button">Clear</button>
+      <button id="clean" class="primary" type="button">Clean up</button>
+    </div>
+
+    <dialog id="confirm" class="confirm">
+      <h2>Clean up these items?</h2>
+      <div id="confirm-groups"></div>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="secondary" type="button">Cancel</button>
+        <button id="confirm-go" class="primary" type="button">Clean up</button>
+      </div>
+    </dialog>
+
+    <template id="finding-template">
+      <div class="finding">
+        <input class="pick" type="checkbox" />
+        <details>
+          <summary>
+            <span class="chev" aria-hidden="true"></span>
+            <span class="title"></span>
+            <span class="chips"></span>
+            <span class="size"></span>
+          </summary>
+          <div class="body">
+            <p class="what"></p>
+            <ul class="evidence"></ul>
+            <p class="if-deleted"></p>
+            <ul class="items"></ul>
+          </div>
+        </details>
+      </div>
+    </template>
+  </body>
+</html>

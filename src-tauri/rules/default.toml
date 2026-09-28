@@ -1,0 +1,420 @@
+# Leftover knowledge base.
+#
+# Detection must work without any [[rule]] entry: the general signals in src/signals/ find
+# leftovers, caches and clutter on their own. Rules only add better wording, catch a few
+# locations the signals can't reason about, and (most importantly) protect things.
+#
+# Path variables: %USERPROFILE% %LOCALAPPDATA% %APPDATA% %LOCALLOW% %TEMP% %PROGRAMDATA% %STEAM%
+# A `*` inside a path segment is a wildcard (e.g. '%LOCALAPPDATA%\*-updater').
+# Strings use single quotes so backslashes don't need escaping.
+
+# Never flagged by the general signals (unknown owner, empty folders, old versions, cache
+# folders), and anything that *contains* one of these is never flagged either. The targeted
+# signals (Downloads, game saves, git repos) and explicit [[rule]] entries still look inside.
+protected = [
+  '%USERPROFILE%\.ssh',
+  '%USERPROFILE%\.gnupg',
+  '%USERPROFILE%\.claude',
+  '%USERPROFILE%\.ollama\models',
+  '%USERPROFILE%\.cargo\bin',
+  '%USERPROFILE%\.rustup',
+  '%USERPROFILE%\Contacts',
+  '%USERPROFILE%\Desktop',
+  '%USERPROFILE%\Documents',
+  '%USERPROFILE%\Downloads',
+  '%USERPROFILE%\Favorites',
+  '%USERPROFILE%\Links',
+  '%USERPROFILE%\Music',
+  '%USERPROFILE%\OneDrive',
+  '%USERPROFILE%\Pictures',
+  '%USERPROFILE%\Saved Games',
+  '%USERPROFILE%\Searches',
+  '%USERPROFILE%\Videos',
+  '%USERPROFILE%\3D Objects',
+  '%LOCALAPPDATA%\Google\Chrome\User Data',
+  '%LOCALAPPDATA%\Microsoft\Edge\User Data',
+  '%LOCALAPPDATA%\BraveSoftware',
+  '%LOCALAPPDATA%\Vivaldi',
+  '%APPDATA%\Mozilla',
+  '%APPDATA%\Opera Software',
+  '%APPDATA%\librewolf\Profiles',
+  '%APPDATA%\Bitwarden',
+  '%APPDATA%\KeePass',
+  '%APPDATA%\KeePassXC',
+  '%LOCALAPPDATA%\1Password',
+  '%APPDATA%\Thunderbird',
+]
+
+# Top-level AppData folders that belong to Windows itself. Never judged as leftovers.
+system_names = [
+  'Microsoft', 'Packages', 'Temp', 'Programs', 'Application Data', 'History',
+  'Temporary Internet Files', 'VirtualStore', 'Publishers', 'IsolatedStorage',
+  'ConnectedDevicesPlatform', 'PlaceholderTileLogoFolder', 'ElevatedDiagnostics', 'Comms',
+  'speech', '.IdentityService', 'Microsoft SDKs', 'Microsoft_Corporation',
+  'ToastNotificationManagerCompat', 'D3DSCache', 'CrashDumps', 'SquirrelTemp', 'fontconfig',
+  'cache', 'Microsoft Help', 'Adobe', 'Sun', 'Intel', 'Package Cache', 'MicrosoftEdge',
+  'Windows', 'Media Center Programs', 'Identities', 'Macromedia', 'Local Settings',
+  'npm', 'npm-cache', 'pip', 'NuGet', 'Yarn', 'go-build', 'electron', 'electron-builder',
+  'Unity', 'UnityHub', 'LocalLow', 'Low', 'LogiOptionsPlus', 'Steam', 'Battle.net',
+  'Blizzard Entertainment', 'EpicGamesLauncher', 'CEF', 'Runtime', 'OpenComposite',
+  'IdentityNexusIntegration', 'INetHistory', 'DBG', 'wsl', 'CMakeTools', 'vcpkg',
+]
+
+# Home dotfolders that are shared containers, not one app's data.
+generic_names = ['.cache', '.config', '.local', '.vscode-shared', '.nuget', '.cargo', '.gradle', '.m2']
+
+# Folders inside Steam's `common` directory that belong to Steam itself.
+steam_internal = ['Steam Controller Configs', 'Steamworks Shared', 'SteamVR', 'Steam.dll']
+
+# Folder names that mean "cache" when found inside an app's data folder.
+cache_names = [
+  'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache',
+  'GrShaderCache', 'ShaderCache', 'CachedData', 'CachedExtensionVSIXs', 'Crashpad',
+  'crashdumps', 'CrashReports', 'logs', 'Service Worker\CacheStorage', 'updates', 'updates_v2',
+  'update-cache', 'pending_update',
+]
+
+# Executable names too generic to identify an app.
+exe_stopwords = [
+  'setup', 'install', 'installer', 'uninstall', 'uninst', 'unins000', 'unins001', 'update',
+  'updater', 'helper', 'launcher', 'crashpad_handler', 'crashreporter', 'crashhandler',
+  'elevate', 'notification_helper', 'vc_redist.x64', 'vc_redist.x86', 'dxsetup', 'squirrel',
+  'python', 'pythonw', 'node', 'java', 'javaw', 'createdump', 'ffmpeg', 'unitycrashhandler64',
+  'unitycrashhandler32', 'crashreportclient', 'reporter', 'service', 'server', 'client',
+  'app', 'main', 'run', 'start', 'game', 'bin', 'cli', 'tool', 'tools', 'test',
+]
+
+# git-ignored folders in a repo that are pure build output (rebuilt by the project's build).
+build_dirs = [
+  'dist', 'build', 'out', 'target', '.next', '.nuxt', '.svelte-kit', '.output', '.turbo',
+  '.parcel-cache', '.cache', 'coverage', '.pytest_cache', '__pycache__', '.mypy_cache',
+  '.ruff_cache', 'obj', 'bin', '.gradle', 'cmake-build-debug', 'cmake-build-release',
+  '.angular', '.vite', 'storybook-static', 'release', 'releases',
+]
+
+# git-ignored folders that are safe to remove but need a command to restore.
+[[restore_dir]]
+name = 'node_modules'
+how = 'Run `npm install` (or your package manager) to restore it.'
+[[restore_dir]]
+name = '.venv'
+how = 'Recreate the virtual environment and reinstall requirements.'
+[[restore_dir]]
+name = 'venv'
+how = 'Recreate the virtual environment and reinstall requirements.'
+[[restore_dir]]
+name = 'env'
+how = 'Recreate the virtual environment and reinstall requirements.'
+[[restore_dir]]
+name = 'vendor'
+how = 'Reinstall dependencies with your package manager.'
+[[restore_dir]]
+name = 'Pods'
+how = 'Run `pod install` to restore it.'
+
+# ---------------------------------------------------------------------------
+# Known caches (tier = safe). Contents are rebuilt automatically.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+id = 'nvidia-shader-cache'
+name = 'NVIDIA shader cache'
+paths = ['%LOCALAPPDATA%\NVIDIA\DXCache', '%LOCALAPPDATA%\NVIDIA\GLCache', '%APPDATA%\NVIDIA\ComputeCache']
+tier = 'safe'
+category = 'games'
+what = 'Compiled graphics shaders saved by the NVIDIA driver so games load faster.'
+if_deleted = 'Rebuilt automatically. Games may stutter briefly the first time you launch them afterwards.'
+
+[[rule]]
+id = 'amd-shader-cache'
+name = 'AMD shader cache'
+paths = ['%LOCALAPPDATA%\AMD\DxCache', '%LOCALAPPDATA%\AMD\DxcCache', '%LOCALAPPDATA%\AMD\VkCache', '%LOCALAPPDATA%\AMD\GLCache']
+tier = 'safe'
+category = 'games'
+what = 'Compiled graphics shaders saved by the AMD driver so games load faster.'
+if_deleted = 'Rebuilt automatically. Games may stutter briefly the first time you launch them afterwards.'
+
+[[rule]]
+id = 'directx-shader-cache'
+name = 'DirectX shader cache'
+paths = ['%LOCALAPPDATA%\D3DSCache']
+tier = 'safe'
+category = 'games'
+what = "Windows' own cache of compiled DirectX shaders."
+if_deleted = 'Rebuilt automatically as games and apps run.'
+
+[[rule]]
+id = 'steam-web-cache'
+name = 'Steam web cache'
+paths = ['%STEAM%\appcache\httpcache', '%STEAM%\dumps', '%STEAM%\logs']
+tier = 'safe'
+category = 'games'
+what = "Steam's cached store pages, crash dumps and logs."
+if_deleted = 'Steam downloads what it needs again.'
+
+[[rule]]
+id = 'npm-cache'
+name = 'npm download cache'
+paths = ['%LOCALAPPDATA%\npm-cache', '%APPDATA%\npm-cache']
+tier = 'safe'
+category = 'dev'
+what = 'Copies of every npm package you have installed, kept to speed up future installs.'
+if_deleted = 'Packages are downloaded again the next time a project needs them.'
+
+[[rule]]
+id = 'yarn-cache'
+name = 'Yarn download cache'
+paths = ['%LOCALAPPDATA%\Yarn\Cache']
+tier = 'safe'
+category = 'dev'
+what = 'Copies of packages downloaded by Yarn.'
+if_deleted = 'Packages are downloaded again when needed.'
+
+[[rule]]
+id = 'pip-cache'
+name = 'pip download cache'
+paths = ['%LOCALAPPDATA%\pip\cache']
+tier = 'safe'
+category = 'dev'
+what = 'Python packages downloaded by pip, kept to speed up future installs.'
+if_deleted = 'Packages are downloaded again when needed.'
+
+[[rule]]
+id = 'electron-cache'
+name = 'Electron download cache'
+paths = ['%LOCALAPPDATA%\electron\Cache', '%LOCALAPPDATA%\electron-builder\Cache']
+tier = 'safe'
+category = 'dev'
+what = 'Electron runtimes and build tools downloaded while building Electron apps.'
+if_deleted = 'Downloaded again the next time you build an Electron app.'
+
+[[rule]]
+id = 'nuget-http-cache'
+name = 'NuGet download cache'
+paths = ['%LOCALAPPDATA%\NuGet\v3-cache', '%LOCALAPPDATA%\NuGet\plugins-cache', '%LOCALAPPDATA%\NuGet\Cache']
+tier = 'safe'
+category = 'dev'
+what = 'Package metadata and downloads cached by NuGet (.NET).'
+if_deleted = 'Downloaded again when a .NET project restores packages.'
+
+[[rule]]
+id = 'nuget-packages'
+name = 'NuGet package folder'
+paths = ['%USERPROFILE%\.nuget\packages']
+tier = 'your_call'
+category = 'dev'
+what = 'Every NuGet package version used by any .NET project on this PC.'
+if_deleted = 'Projects re-download their packages on the next restore, which can take a while.'
+
+[[rule]]
+id = 'cargo-cache'
+name = 'Cargo download cache'
+paths = ['%USERPROFILE%\.cargo\registry\cache', '%USERPROFILE%\.cargo\registry\src', '%USERPROFILE%\.cargo\git\checkouts']
+tier = 'safe'
+category = 'dev'
+what = 'Rust crates downloaded and unpacked by Cargo.'
+if_deleted = 'Downloaded again the next time a Rust project builds.'
+
+[[rule]]
+id = 'gradle-cache'
+name = 'Gradle cache'
+paths = ['%USERPROFILE%\.gradle\caches', '%USERPROFILE%\.gradle\wrapper\dists']
+tier = 'safe'
+category = 'dev'
+what = 'Dependencies and Gradle versions downloaded for Java/Android builds.'
+if_deleted = 'Downloaded again on the next build.'
+
+[[rule]]
+id = 'go-build-cache'
+name = 'Go build cache'
+paths = ['%LOCALAPPDATA%\go-build']
+tier = 'safe'
+category = 'dev'
+what = 'Compiled Go packages kept to speed up builds.'
+if_deleted = 'Rebuilt on the next build.'
+
+[[rule]]
+id = 'huggingface-cache'
+name = 'Hugging Face model cache'
+paths = ['%USERPROFILE%\.cache\huggingface']
+tier = 'your_call'
+category = 'dev'
+what = 'AI models and datasets downloaded by Hugging Face tools.'
+if_deleted = 'Models are downloaded again when a project needs them. They can be several GB each.'
+
+[[rule]]
+id = 'vscode-cache'
+name = 'VS Code caches'
+paths = ['%APPDATA%\Code\Cache', '%APPDATA%\Code\CachedData', '%APPDATA%\Code\CachedExtensionVSIXs', '%APPDATA%\Code\Code Cache', '%APPDATA%\Code\GPUCache']
+tier = 'safe'
+category = 'cache'
+what = "VS Code's web cache, cached builds of old versions, and downloaded extension installers."
+if_deleted = 'Rebuilt as VS Code runs. Close VS Code first.'
+
+[[rule]]
+id = 'app-updater-cache'
+name = 'App updater downloads'
+paths = ['%LOCALAPPDATA%\*-updater', '%LOCALAPPDATA%\Ollama\updates_v2', '%LOCALAPPDATA%\Ollama\updates']
+tier = 'safe'
+category = 'cache'
+what = 'Installers that apps downloaded to update themselves.'
+if_deleted = 'The app downloads the update again if it still needs it.'
+
+[[rule]]
+id = 'windows-error-reports'
+name = 'Windows error reports'
+paths = ['%LOCALAPPDATA%\Microsoft\Windows\WER\ReportArchive', '%LOCALAPPDATA%\Microsoft\Windows\WER\ReportQueue', '%LOCALAPPDATA%\CrashDumps']
+tier = 'safe'
+category = 'cache'
+what = 'Crash reports and memory dumps from programs that crashed.'
+if_deleted = 'Nothing is lost unless you are debugging a crash.'
+
+[[rule]]
+id = 'squirrel-temp'
+name = 'Installer temp files'
+paths = ['%LOCALAPPDATA%\SquirrelTemp']
+tier = 'safe'
+category = 'temp'
+what = 'Temporary files from app installers that use Squirrel (Discord, Slack, Teams and others).'
+if_deleted = 'Nothing; they are only used during an install.'
+
+[[rule]]
+id = 'dotnet-telemetry'
+name = '.NET telemetry queue'
+paths = ['%USERPROFILE%\.dotnet\TelemetryStorageService']
+tier = 'safe'
+category = 'dev'
+what = 'Usage data the .NET SDK queued to send to Microsoft.'
+if_deleted = 'Nothing.'
+
+[[rule]]
+id = 'browser-caches'
+name = 'Browser caches'
+paths = [
+  '%LOCALAPPDATA%\Google\Chrome\User Data\*\Cache',
+  '%LOCALAPPDATA%\Google\Chrome\User Data\*\Code Cache',
+  '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\Cache',
+  '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\Code Cache',
+  '%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\*\Cache',
+  '%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\*\Code Cache',
+  '%LOCALAPPDATA%\Mozilla\Firefox\Profiles\*\cache2',
+  '%LOCALAPPDATA%\librewolf\Profiles\*\cache2',
+]
+tier = 'safe'
+category = 'cache'
+what = 'Copies of web pages, images and scripts browsers keep to load sites faster.'
+if_deleted = 'Sites load a little slower the first time. Logins, history and bookmarks are not affected.'
+
+# ---------------------------------------------------------------------------
+# Known leftovers (tier = leftover). Flagged only when none of `owner` is installed.
+# These add names and wording; the general "no installed owner" signal would still
+# find most of them without a rule.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+id = 'docker-leftovers'
+name = 'Docker Desktop leftovers'
+paths = ['%USERPROFILE%\.docker', '%LOCALAPPDATA%\Docker', '%APPDATA%\Docker', '%APPDATA%\Docker Desktop', '%LOCALAPPDATA%\docker-secrets-engine']
+owner = ['Docker Desktop']
+owner_exe = ['docker', 'Docker Desktop']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, CLI plugins and cached data from Docker Desktop.'
+if_deleted = 'Nothing, unless you reinstall Docker and want your old settings back.'
+
+[[rule]]
+id = 'conda-leftovers'
+name = 'Conda (Anaconda/Miniconda) leftovers'
+paths = ['%USERPROFILE%\.conda', '%LOCALAPPDATA%\conda', '%USERPROFILE%\.condarc']
+owner = ['Anaconda', 'Miniconda', 'Miniforge', 'Mambaforge']
+owner_exe = ['conda', 'mamba']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings and the environment list used by Anaconda or Miniconda.'
+if_deleted = 'Nothing, unless you reinstall conda.'
+
+[[rule]]
+id = 'davinci-leftovers'
+name = 'DaVinci Resolve leftovers'
+paths = ['%APPDATA%\Blackmagic Design', '%LOCALAPPDATA%\DaVinci Resolve Welcome']
+owner = ['DaVinci Resolve', 'Blackmagic RAW', 'Blackmagic Desktop Video', 'Fusion Studio']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings and caches from DaVinci Resolve (made by Blackmagic Design).'
+if_deleted = 'Nothing, unless you reinstall Resolve and want your old preferences.'
+
+[[rule]]
+id = 'roblox-leftovers'
+name = 'Roblox leftovers'
+paths = ['%LOCALAPPDATA%\Roblox']
+owner = ['Roblox']
+owner_exe = ['RobloxPlayerBeta', 'RobloxStudioBeta', 'RobloxPlayerLauncher', 'Bloxstrap', 'Fishstrap']
+tier = 'leftover'
+category = 'games'
+what = 'Downloaded game assets, logs and settings from Roblox.'
+if_deleted = 'Nothing. Roblox downloads assets again if you reinstall it.'
+
+[[rule]]
+id = 'librewolf-leftovers'
+name = 'LibreWolf leftovers'
+paths = ['%LOCALAPPDATA%\librewolf', '%APPDATA%\librewolf']
+owner = ['LibreWolf']
+owner_exe = ['librewolf']
+tier = 'your_call'
+category = 'leftover'
+what = 'Browser profile and cache from LibreWolf, a Firefox-based browser.'
+if_deleted = 'Bookmarks, history and saved logins in that profile are gone for good. Export anything you want first.'
+
+[[rule]]
+id = 'epic-leftovers'
+name = 'Epic Games Launcher leftovers'
+paths = ['%LOCALAPPDATA%\EpicGamesLauncher']
+owner = ['Epic Games Launcher']
+owner_exe = ['EpicGamesLauncher']
+tier = 'leftover'
+category = 'games'
+what = 'Settings, logs and web cache from the Epic Games Launcher.'
+if_deleted = 'Nothing, unless you reinstall the launcher.'
+
+[[rule]]
+id = 'overwolf-leftovers'
+name = 'Overwolf leftovers'
+paths = ['%LOCALAPPDATA%\Overwolf', '%APPDATA%\ow-electron']
+owner = ['Overwolf', 'CurseForge']
+owner_exe = ['Overwolf', 'CurseForge']
+tier = 'leftover'
+category = 'games'
+what = 'Data from Overwolf, the platform behind CurseForge and many game overlays.'
+if_deleted = 'Nothing, unless you reinstall an Overwolf app.'
+
+[[rule]]
+id = 'cursor-leftovers'
+name = 'Cursor editor leftovers'
+paths = ['%APPDATA%\Cursor', '%USERPROFILE%\.cursor', '%LOCALAPPDATA%\Programs\cursor', '%LOCALAPPDATA%\cursor-updater']
+owner = ['Cursor']
+owner_exe = ['Cursor']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, extensions and caches from the Cursor code editor.'
+if_deleted = 'Nothing, unless you reinstall Cursor and want your old settings.'
+
+[[rule]]
+id = 'vscode-leftovers'
+name = 'VS Code leftovers'
+paths = ['%APPDATA%\Code', '%USERPROFILE%\.vscode']
+owner = ['Visual Studio Code']
+owner_exe = ['Code']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, extensions and caches from Visual Studio Code.'
+if_deleted = 'Nothing, unless you reinstall VS Code and want your old settings and extensions.'
+
+[[rule]]
+id = 'aws-toolkit-leftovers'
+name = 'AWS Toolkit leftovers'
+paths = ['%LOCALAPPDATA%\AWSToolkit']
+owner = ['AWS Toolkit']
+tier = 'leftover'
+category = 'leftover'
+what = 'Data from the AWS Toolkit extension for Visual Studio.'
+if_deleted = 'Nothing.'

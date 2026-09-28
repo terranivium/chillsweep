@@ -88,7 +88,7 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
                 method,
                 error: None,
             };
-            if let Some(reason) = refuse_reason(finding.tier, path, ctx) {
+            if let Some(reason) = refuse_reason(path, ctx) {
                 outcome.method = Method::Skipped;
                 outcome.error = Some(reason.into());
             } else {
@@ -117,10 +117,8 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
     result
 }
 
-fn refuse_reason(tier: Tier, path: &Path, ctx: &Ctx) -> Option<&'static str> {
-    if tier == Tier::Unknown {
-        Some("Items without a verdict can't be removed.")
-    } else if ctx.is_protected(path) {
+fn refuse_reason(path: &Path, ctx: &Ctx) -> Option<&'static str> {
+    if ctx.is_protected(path) {
         Some("This location is protected.")
     } else if ctx.inv.running_inside(path).is_some() {
         Some("A running program is using it. Close the program and try again.")
@@ -280,15 +278,6 @@ mod tests {
         let r = clean(&report_with(Tier::Leftover, &path), &["f1".into()], true, &ctx());
         assert_eq!(r.outcomes[0].method, Method::Skipped);
         assert_eq!(r.outcomes[0].error.as_deref(), Some("This location is protected."));
-    }
-
-    #[test]
-    fn rejects_unknown_tier() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = fixture(tmp.path());
-        let r = clean(&report_with(Tier::Unknown, &dir), &["f1".into()], true, &ctx());
-        assert_eq!(r.outcomes[0].method, Method::Skipped);
-        assert!(dir.exists());
     }
 
     #[test]

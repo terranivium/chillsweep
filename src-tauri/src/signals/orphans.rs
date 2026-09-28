@@ -1,6 +1,7 @@
 //! App data folders that nothing installed on this PC owns.
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 use rayon::prelude::*;
 
@@ -64,9 +65,9 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
                 f.what = Some("Looks like save data for a game that isn't installed.".into());
                 f.if_deleted = Some("Your progress is gone for good unless the game keeps cloud saves. Keep it if you might play again.".into());
             } else if days < 1 {
-                f.tier = Tier::Unknown;
-                f.confidence = Confidence::Low;
-                f.evidence.push("Something changed it in the last 24 hours, so a program may still be using it.".into());
+                // Changed in the last day: a program may still be using it. Skip it and say so.
+                ctx.skipped_recent.fetch_add(1, Ordering::Relaxed);
+                return None;
             } else if days < 30 && !has_refs {
                 f.confidence = Confidence::Medium;
                 f.if_deleted = Some("Probably nothing, but it was used recently. If an app you still use loses its settings, restore it from the Recycle Bin.".into());

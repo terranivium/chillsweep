@@ -1,36 +1,71 @@
-:root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --text: #1b1f24;
-  --muted: #5f6b7a;
-  --border: #dde1e7;
-  --accent: #2f6fde;
-  --accent-text: #ffffff;
-  --safe: #1f8a5b;
-  --leftover: #b7791f;
-  --your-call: #6b5bd2;
-  --unknown: #6b7280;
-  --radius: 10px;
-  color-scheme: light;
+/* Colours are Catppuccin, matching Vocal Slice: Mocha (dark, default) and Latte Soft (light).
+   theme.js puts theme-mocha or theme-latte-soft on <html>. */
+:root,
+:root.theme-mocha {
+  color-scheme: dark;
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --surface2: #585b70;
+  --overlay0: #6c7086;
+  --overlay1: #7f849c;
+  --overlay2: #9399b2;
+  --text: #cdd6f4;
+  --subtext1: #bac2de;
+  --subtext0: #a6adc8;
+  --lavender: #b4befe;
+  --blue: #89b4fa;
+  --green: #a6e3a1;
+  --yellow: #f9e2af;
+  --peach: #fab387;
+  --red: #f38ba8;
+  --mauve: #cba6f7;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171b;
-    --surface: #1c2026;
-    --surface-2: #232830;
-    --text: #e6e9ee;
-    --muted: #97a1ad;
-    --border: #2e343d;
-    --accent: #5b8ff0;
-    --accent-text: #0d1117;
-    --safe: #3fbf86;
-    --leftover: #e0a646;
-    --your-call: #9d8ff0;
-    --unknown: #9aa3ae;
-    color-scheme: dark;
-  }
+:root.theme-latte-soft {
+  color-scheme: light;
+  --base: #f5f5f9;
+  --mantle: #ededf2;
+  --crust: #e5e5eb;
+  --surface0: #d5d5dd;
+  --surface1: #c5c5d0;
+  --surface2: #b5b5c3;
+  --overlay0: #a5a5b5;
+  --overlay1: #9595a7;
+  --overlay2: #858599;
+  --text: #525469;
+  --subtext1: #626277;
+  --subtext0: #727285;
+  --lavender: #7f8cef;
+  --blue: #3d7af5;
+  --green: #50b03b;
+  --yellow: #e9982d;
+  --peach: #ff741b;
+  --red: #dc2049;
+  --mauve: #9449ff;
+}
+
+/* Leftover's own names for those colours. */
+:root {
+  --bg: var(--mantle);
+  --surface: var(--base);
+  --surface-2: var(--surface0);
+  --border: var(--surface1);
+  --muted: var(--subtext0);
+  --accent: var(--blue);
+  --safe: var(--green);
+  --leftover: var(--peach);
+  --your-call: var(--mauve);
+  --gradient: linear-gradient(135deg, var(--blue) 0%, var(--mauve) 100%);
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 12px;
+  --shadow: 0 4px 12px rgb(0 0 0 / 0.1);
+  --shadow-hover: 0 8px 20px rgb(0 0 0 / 0.15);
+  --shadow-dialog: 0 12px 32px rgb(0 0 0 / 0.35);
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Mono", Consolas, monospace;
 }
 
 * {
@@ -41,11 +76,36 @@
   display: none !important;
 }
 
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface0);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--overlay0);
+  border: 2px solid var(--surface0);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--overlay1);
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font: 14px/1.5 "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 .top {
@@ -56,15 +116,25 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 24px;
+  padding: 14px 24px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 h1 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 650;
+  font-size: 22px;
+  font-weight: 700;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .tagline {
@@ -77,18 +147,111 @@ button {
   cursor: pointer;
 }
 
+button i {
+  font-size: 18px;
+}
+
+/* Primary: Vocal Slice's .btn-primary, a little shorter to fit the header and selection bar. */
 button.primary {
-  padding: 8px 22px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 18px;
+  overflow: hidden;
   border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-text);
+  border-radius: var(--radius-lg);
+  background: var(--gradient);
+  box-shadow: var(--shadow);
+  color: var(--crust);
   font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button.primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.2) 0%, rgb(255 255 255 / 0) 100%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+button.primary:hover::before {
+  opacity: 1;
+}
+
+button.primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+button.primary:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 button.primary:disabled {
-  opacity: 0.6;
+  background: linear-gradient(135deg, var(--surface0) 0%, var(--surface1) 100%);
+  box-shadow: none;
+  color: var(--overlay0);
   cursor: progress;
+}
+
+/* Secondary: the quiet button Vocal Slice uses in dialogs. */
+button.secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface1);
+  color: var(--text);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--surface2);
+  box-shadow: var(--shadow-hover);
+}
+
+button.secondary i {
+  font-size: 16px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--surface1);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--subtext0);
+  font-size: 20px;
+  transition: all 0.2s ease;
+}
+
+.icon-btn i {
+  font-size: inherit;
+}
+
+.icon-btn:hover {
+  border-color: var(--surface2);
+  background: var(--surface0);
+  color: var(--blue);
+}
+
+.icon-btn.small {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
 }
 
 button.link {
@@ -102,7 +265,6 @@ button.link {
 button.link:hover {
   text-decoration: underline;
 }
-
 main {
   max-width: 1100px;
   margin: 0 auto;
@@ -129,7 +291,7 @@ main {
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 24px;
 }
@@ -151,8 +313,16 @@ main {
 }
 
 .card-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-weight: 600;
+}
+
+.card-label i {
+  color: var(--tier);
+  font-size: 18px;
 }
 
 .card-size {
@@ -169,7 +339,6 @@ main {
 .tier-safe { --tier: var(--safe); }
 .tier-leftover { --tier: var(--leftover); }
 .tier-your_call { --tier: var(--your-call); }
-.tier-unknown { --tier: var(--unknown); }
 
 .tier {
   margin-bottom: 28px;
@@ -178,15 +347,23 @@ main {
 
 .tier-head {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding-left: 10px;
-  border-left: 4px solid var(--tier);
+  align-items: center;
+  gap: 10px;
+}
+
+.tier-icon {
+  color: var(--tier);
+  font-size: 22px;
 }
 
 .tier-head h2 {
   margin: 0;
   font-size: 17px;
+  font-weight: 700;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .tier-total {
@@ -195,7 +372,7 @@ main {
 }
 
 .tier-blurb {
-  margin: 4px 0 12px 14px;
+  margin: 4px 0 12px 32px;
   color: var(--muted);
 }
 
@@ -245,22 +422,24 @@ main {
   display: none;
 }
 
-.finding summary:hover {
+/* Highlight the whole item, checkbox column and expanded body included. */
+.finding:hover {
   background: var(--surface-2);
 }
 
+.finding:hover .chip {
+  background: var(--surface1);
+}
+
 .chev {
-  width: 8px;
-  height: 8px;
   flex: none;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  transform: rotate(-45deg);
+  color: var(--muted);
+  font-size: 14px;
   transition: transform 0.15s;
 }
 
 .finding details[open] .chev {
-  transform: rotate(45deg);
+  transform: rotate(90deg);
 }
 
 .title {
@@ -334,7 +513,7 @@ main {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -349,18 +528,6 @@ main {
 .footer {
   color: var(--muted);
   font-size: 13px;
-}
-
-button.secondary {
-  padding: 7px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-}
-
-button.secondary:hover {
-  background: var(--surface-2);
 }
 
 .select-all {
@@ -385,7 +552,7 @@ body.has-selection main {
   padding: 12px 24px;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 16px rgb(0 0 0 / 0.08);
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 0.15);
 }
 
 .selection-bar[hidden] {
@@ -442,23 +609,53 @@ body.has-selection main {
   display: none;
 }
 
-.confirm {
+/* Dialogs: Vocal Slice's .license-modal-pop. */
+.dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
-  padding: 20px 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
+  padding: 20px;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-lg);
+  background: var(--surface0);
+  box-shadow: var(--shadow-dialog);
   color: var(--text);
 }
 
-.confirm::backdrop {
-  background: rgb(0 0 0 / 0.45);
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
 }
 
-.confirm h2 {
-  margin: 0 0 12px;
-  font-size: 17px;
+.dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dialog .muted {
+  color: var(--subtext1);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog-head h2 {
+  margin: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.dialog-actions.start {
+  justify-content: flex-start;
+  margin-top: 10px;
 }
 
 .confirm-group h3 {
@@ -479,11 +676,78 @@ body.has-selection main {
   font-size: 13px;
 }
 
-.confirm-actions {
+/* About: Vocal Slice's Settings → About panel, as a dialog. */
+.about {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.about #about-title {
+  font-size: 20px;
+  font-weight: 700;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.about > .muted {
+  margin: 4px 0 14px;
+  font-size: 13.5px;
+}
+
+.about-info div {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.about-info div span:first-child {
+  color: var(--subtext0);
+}
+
+.about-info div span:last-child {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.about-heading {
+  margin: 18px 0 6px;
+  padding-top: 14px;
+  border-top: 2px solid var(--surface1);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.about-text {
+  margin: 0;
+  color: var(--subtext1);
+  font-size: 13.5px;
+}
+
+/* Third-party licenses: tall, and only the body scrolls. */
+.notices[open] {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+}
+
+.notices-body {
+  flex: 1;
+  min-height: 0;
+  margin: 12px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius);
+  background: var(--base);
+  color: var(--subtext1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .footer p {
@@ -491,9 +755,6 @@ body.has-selection main {
 }
 
 @media (max-width: 720px) {
-  .summary {
-    grid-template-columns: repeat(2, 1fr);
-  }
   .top,
   main {
     padding-left: 16px;

@@ -2,10 +2,9 @@ const { invoke } = window.__TAURI__.core;
 const { revealItemInDir } = window.__TAURI__.opener;
 
 const TIERS = {
-  safe: { label: "Safe to clear", blurb: "Caches and junk that rebuild themselves." },
-  leftover: { label: "Leftovers", blurb: "Left behind by apps and games that are no longer installed." },
-  your_call: { label: "Your call", blurb: "Removable, but only you know if you still want these." },
-  unknown: { label: "Unknown", blurb: "Couldn't reach a verdict, so these can't be removed. Here are the facts." },
+  safe: { icon: "ph-recycle", label: "Safe to clear", blurb: "Caches and junk that rebuild themselves." },
+  leftover: { icon: "ph-package", label: "Leftovers", blurb: "Left behind by apps and games that are no longer installed." },
+  your_call: { icon: "ph-question", label: "Your call", blurb: "Removable, but only you know if you still want these." },
 };
 
 const CATEGORY_LABELS = {
@@ -65,7 +64,9 @@ function renderSummary(report) {
     const tier = TIERS[total.tier];
     const card = el("a", `card tier-${total.tier}`);
     card.href = `#tier-${total.tier}`;
-    card.append(el("span", "card-label", tier.label), el("span", "card-size", formatSize(total.bytes)), el("span", "card-count", plural(total.count, "item")));
+    const label = el("span", "card-label");
+    label.append(el("i", `ph ${tier.icon}`), document.createTextNode(tier.label));
+    card.append(label,el("span", "card-size", formatSize(total.bytes)), el("span", "card-count", plural(total.count, "item")));
     if (total.count === 0) card.classList.add("empty");
     summary.append(card);
   }
@@ -80,10 +81,6 @@ function renderFinding(f) {
 
   const pick = node.querySelector(".pick");
   pick.setAttribute("aria-label", `Select ${f.title}`);
-  if (f.tier === "unknown") {
-    pick.disabled = true;
-    pick.title = "Items without a verdict can't be removed.";
-  }
   pick.addEventListener("change", () => {
     if (pick.checked) selected.add(f.id);
     else selected.delete(f.id);
@@ -131,18 +128,16 @@ function renderResults(report) {
     section.id = `tier-${total.tier}`;
 
     const head = el("div", "tier-head");
-    head.append(el("h2", null, tier.label), el("span", "tier-total", formatSize(total.bytes)));
-    if (total.tier !== "unknown") {
-      const all = el("button", "link select-all", "Select all");
-      all.type = "button";
-      all.addEventListener("click", () => {
-        const allSelected = tierFindings.every((f) => selected.has(f.id));
-        for (const f of tierFindings) allSelected ? selected.delete(f.id) : selected.add(f.id);
-        syncCheckboxes();
-        updateSelectionBar();
-      });
-      head.append(all);
-    }
+    head.append(el("i", `tier-icon ph ${tier.icon}`), el("h2", null, tier.label), el("span", "tier-total", formatSize(total.bytes)));
+    const all = el("button", "link select-all", "Select all");
+    all.type = "button";
+    all.addEventListener("click", () => {
+      const allSelected = tierFindings.every((f) => selected.has(f.id));
+      for (const f of tierFindings) allSelected ? selected.delete(f.id) : selected.add(f.id);
+      syncCheckboxes();
+      updateSelectionBar();
+    });
+    head.append(all);
     section.append(head, el("p", "tier-blurb", tier.blurb));
 
     const list = el("div", "findings");
@@ -202,8 +197,9 @@ function updateSelectionBar() {
 
 async function scan({ keepOutcome = false } = {}) {
   const button = $("#scan");
+  const label = button.querySelector(".label");
   button.disabled = true;
-  button.textContent = "Scanning…";
+  label.textContent = "Scanning…";
   if (!keepOutcome) $("#outcome").hidden = true;
   setStatus("Scanning your folders. This only reads; nothing is changed.");
   try {
@@ -215,13 +211,13 @@ async function scan({ keepOutcome = false } = {}) {
     renderResults(report);
     renderFooter(report);
     updateSelectionBar();
-    const reclaimable = report.totals.filter((t) => t.tier !== "unknown").reduce((sum, t) => sum + t.bytes, 0);
+    const reclaimable = report.totals.reduce((sum, t) => sum + t.bytes, 0);
     setStatus(`Found ${formatSize(reclaimable)} you could reclaim. Open any item to see why it was flagged, then tick what you want to remove.`);
   } catch (e) {
     setStatus(`Scan failed: ${e}`);
   } finally {
     button.disabled = false;
-    button.textContent = "Scan again";
+    label.textContent = "Scan again";
   }
 }
 
@@ -284,7 +280,7 @@ function showOutcome(result) {
   const undo = $("#undo");
   undo.hidden = recycled === 0;
   undo.disabled = false;
-  undo.textContent = `Undo (put back ${plural(recycled, "item")})`;
+  undo.querySelector(".label").textContent = `Undo (put back ${plural(recycled, "item")})`;
   $("#outcome").hidden = false;
 }
 
@@ -305,7 +301,54 @@ async function undoLast() {
   await scan({ keepOutcome: true });
 }
 
+// ---------------------------------------------------------------------------
+// About
+// ---------------------------------------------------------------------------
+
+let aboutFilled = false;
+
+async function openAbout() {
+  $("#about").showModal();
+  if (aboutFilled) return;
+  try {
+    const info = await invoke("app_info");
+    $("#about-version").textContent = `v${info.version}`;
+    $("#about-hash").textContent = info.git_hash;
+    $("#about-built").textContent = info.build_time ? new Date(info.build_time * 1000).toLocaleString() : "—";
+    aboutFilled = true;
+  } catch (e) {
+    $("#about-version").textContent = `Unavailable (${e})`;
+  }
+}
+
+async function openNotices() {
+  const body = $("#notices-body");
+  if (!body.textContent) {
+    try {
+      const res = await fetch("third-party-notices.txt");
+      body.textContent = res.ok ? await res.text() : "The license file is missing from this build.";
+    } catch (e) {
+      body.textContent = `Couldn't load the license file: ${e}`;
+    }
+  }
+  $("#notices").showModal();
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  $("#about-open").addEventListener("click", openAbout);
+  $("#notices-open").addEventListener("click", openNotices);
+  for (const button of document.querySelectorAll("dialog [data-close]")) {
+    button.addEventListener("click", () => button.closest("dialog").close());
+  }
+  // Clicking the backdrop closes the informational dialogs (not the clean-up confirmation).
+  for (const dialog of [$("#about"), $("#notices")]) {
+    dialog.addEventListener("click", (e) => {
+      if (e.target !== dialog) return;
+      const r = dialog.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (!inside) dialog.close();
+    });
+  }
   $("#scan").addEventListener("click", () => scan());
   $("#clean").addEventListener("click", confirmClean);
   $("#confirm-cancel").addEventListener("click", () => $("#confirm").close());

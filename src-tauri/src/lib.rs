@@ -51,12 +51,30 @@ async fn undo_last(state: State<'_, AppState>) -> Result<clean::RestoreResult, S
     tauri::async_runtime::spawn_blocking(move || clean::undo(&paths, since)).await.map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+struct AppInfo {
+    version: &'static str,
+    git_hash: &'static str,
+    /// Unix seconds.
+    build_time: u64,
+}
+
+/// Version and build details for the About screen.
+#[tauri::command]
+fn app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        git_hash: env!("LEFTOVER_GIT_HASH"),
+        build_time: env!("LEFTOVER_BUILD_TIME").parse().unwrap_or(0),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![scan, clean, undo_last])
+        .invoke_handler(tauri::generate_handler![scan, clean, undo_last, app_info])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

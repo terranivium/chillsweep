@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Leftover</title>
+    <link rel="stylesheet" href="vendor/phosphor/regular/style.css" />
+    <link rel="stylesheet" href="vendor/phosphor/fill/style.css" />
     <link rel="stylesheet" href="styles.css" />
+    <script src="theme.js"></script>
     <script type="module" src="/main.js" defer></script>
   </head>
 
@@ -14,7 +17,17 @@
         <h1>Leftover</h1>
         <p class="tagline">Finds what uninstalled apps, caches, dev projects and games left behind.</p>
       </div>
-      <button id="scan" class="primary" type="button">Scan</button>
+      <div class="top-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light or dark theme">
+          <i id="theme-icon" class="ph-fill ph-moon" aria-hidden="true"></i>
+        </button>
+        <button id="about-open" class="icon-btn" type="button" title="About Leftover" aria-label="About Leftover">
+          <i class="ph ph-info" aria-hidden="true"></i>
+        </button>
+        <button id="scan" class="primary" type="button">
+          <i class="ph ph-magnifying-glass" aria-hidden="true"></i><span class="label">Scan</span>
+        </button>
+      </div>
     </header>
 
     <main>
@@ -31,7 +44,9 @@
       <section id="outcome" class="outcome" hidden>
         <div class="outcome-head">
           <p id="outcome-text"></p>
-          <button id="undo" class="secondary" type="button" hidden>Undo</button>
+          <button id="undo" class="secondary" type="button" hidden>
+            <i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i><span class="label">Undo</span>
+          </button>
         </div>
         <ul id="outcome-problems" class="problems"></ul>
       </section>
@@ -48,16 +63,59 @@
         Delete safe-to-clear items permanently
       </label>
       <button id="clear-selection" class="secondary" type="button">Clear</button>
-      <button id="clean" class="primary" type="button">Clean up</button>
+      <button id="clean" class="primary" type="button">
+        <i class="ph ph-broom" aria-hidden="true"></i><span class="label">Clean up</span>
+      </button>
     </div>
 
-    <dialog id="confirm" class="confirm">
+    <dialog id="confirm" class="dialog confirm">
       <h2>Clean up these items?</h2>
       <div id="confirm-groups"></div>
-      <div class="confirm-actions">
+      <div class="dialog-actions">
         <button id="confirm-cancel" class="secondary" type="button">Cancel</button>
-        <button id="confirm-go" class="primary" type="button">Clean up</button>
+        <button id="confirm-go" class="primary" type="button">
+          <i class="ph ph-broom" aria-hidden="true"></i><span class="label">Clean up</span>
+        </button>
       </div>
+    </dialog>
+
+    <dialog id="about" class="dialog about" aria-labelledby="about-title">
+      <div class="dialog-head">
+        <h2 id="about-title">Leftover</h2>
+        <button class="icon-btn small" type="button" data-close aria-label="Close">
+          <i class="ph ph-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <p class="muted">Finds what uninstalled apps, caches, dev projects and games left behind.</p>
+
+      <div class="about-info">
+        <div><span>Version</span><span id="about-version">—</span></div>
+        <div><span>Commit</span><span id="about-hash">—</span></div>
+        <div><span>Built</span><span id="about-built">—</span></div>
+      </div>
+
+      <h3 class="about-heading">How it works</h3>
+      <p class="about-text">
+        A scan only reads your folders and the registry; it never changes anything or starts other programs.
+        When you clean up, items go to the Recycle Bin (and can be undone), except safe-to-clear caches if you
+        choose to delete those permanently.
+      </p>
+
+      <h3 class="about-heading">Legal</h3>
+      <p class="about-text">© 2026 Wesley Scott. All rights reserved.</p>
+      <div class="dialog-actions start">
+        <button id="notices-open" class="secondary" type="button">
+          <i class="ph ph-scroll" aria-hidden="true"></i><span class="label">Third-party licenses</span>
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="notices" class="dialog notices" aria-labelledby="notices-title">
+      <div class="dialog-head">
+        <h2 id="notices-title">Third-party licenses</h2>
+        <button class="secondary" type="button" data-close>Close</button>
+      </div>
+      <pre id="notices-body" class="notices-body"></pre>
     </dialog>
 
     <template id="finding-template">
@@ -65,7 +123,7 @@
         <input class="pick" type="checkbox" />
         <details>
           <summary>
-            <span class="chev" aria-hidden="true"></span>
+            <i class="chev ph ph-caret-right" aria-hidden="true"></i>
             <span class="title"></span>
             <span class="chips"></span>
             <span class="size"></span>

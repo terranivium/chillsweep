@@ -1,0 +1,48 @@
+Leftover includes the following third-party software.
+
+--------------------------------------------------------------------------------
+Phosphor Icons 2.1.2 (MIT)
+https://github.com/phosphor-icons/web
+Vendored as src/vendor/phosphor/ (regular and fill weights), unmodified.
+
+MIT License
+
+Copyright (c) 2020-2021 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Tauri 2 and tauri-plugin-opener (MIT or Apache-2.0)
+https://github.com/tauri-apps/tauri
+Copyright (c) 2017 - Present Tauri Apps Contributors
+
+--------------------------------------------------------------------------------
+Rust crates (each under MIT, Apache-2.0, or both, unless noted)
+
+  serde, serde_json     MIT or Apache-2.0
+  toml                  MIT or Apache-2.0
+  winreg                MIT
+  rayon                 MIT or Apache-2.0
+  regex                 MIT or Apache-2.0
+  ignore                MIT or Unlicense
+  sysinfo               MIT
+  trash                 MIT
+
+The full license texts are available from each project's repository
+and from crates.io.

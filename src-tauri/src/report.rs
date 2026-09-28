@@ -9,8 +9,6 @@ pub enum Tier {
     Leftover,
     /// Removable, but the user should decide (saves, big downloads, profiles).
     YourCall,
-    /// We only have facts, not a verdict.
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

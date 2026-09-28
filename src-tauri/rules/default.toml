@@ -12,6 +12,9 @@
 # folders), and anything that *contains* one of these is never flagged either. The targeted
 # signals (Downloads, game saves, git repos) and explicit [[rule]] entries still look inside.
 protected = [
+  '%LOCALAPPDATA%\com.leftover.app',   # Leftover's own WebView data
+  '%APPDATA%\com.leftover.app',
+  '%LOCALAPPDATA%\Leftover',           # Leftover's clean-up history
   '%USERPROFILE%\.ssh',
   '%USERPROFILE%\.gnupg',
   '%USERPROFILE%\.claude',

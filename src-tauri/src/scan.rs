@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use crate::fsutil;
@@ -17,6 +18,8 @@ pub struct Ctx {
     protected: Vec<String>,
     /// Paths a rule ties to a program that is still installed.
     owned: Vec<String>,
+    /// Unowned folders left out because something changed them in the last 24 hours.
+    pub skipped_recent: AtomicUsize,
 }
 
 impl Ctx {
@@ -34,7 +37,7 @@ impl Ctx {
             .flat_map(|r| r.paths.iter().flat_map(|p| roots.resolve(p)))
             .map(|p| fsutil::lower(&p))
             .collect();
-        Ctx { roots, rules, inv, now: fsutil::now(), protected, owned }
+        Ctx { roots, rules, inv, now: fsutil::now(), protected, owned, skipped_recent: AtomicUsize::new(0) }
     }
 
     /// Inside a folder that a rule says belongs to an installed program.
@@ -61,7 +64,7 @@ pub fn run() -> Report {
     drop_nested(&mut findings);
     findings.sort_by(|a, b| a.tier.cmp(&b.tier).then(b.bytes.cmp(&a.bytes)));
 
-    let totals = [Tier::Safe, Tier::Leftover, Tier::YourCall, Tier::Unknown]
+    let totals = [Tier::Safe, Tier::Leftover, Tier::YourCall]
         .into_iter()
         .map(|tier| {
             let of_tier = findings.iter().filter(|f| f.tier == tier);
@@ -72,6 +75,13 @@ pub fn run() -> Report {
     let mut warnings = Vec::new();
     if ctx.roots.steam.is_none() {
         warnings.push("Steam wasn't found, so Steam libraries weren't checked.".into());
+    }
+    let recent = ctx.skipped_recent.load(Ordering::Relaxed);
+    if recent > 0 {
+        let folders = if recent == 1 { "1 unowned folder was".to_string() } else { format!("{recent} unowned folders were") };
+        warnings.push(format!(
+            "{folders} skipped because something changed them in the last 24 hours, so a program may still be using them. Scan again tomorrow."
+        ));
     }
     Report { findings, totals, inventory: ctx.inv.summary.clone(), duration_ms: started.elapsed().as_millis(), warnings }
 }

@@ -25,7 +25,6 @@ fn main() {
             Tier::Safe => "SAFE TO CLEAR",
             Tier::Leftover => "LEFTOVERS",
             Tier::YourCall => "YOUR CALL",
-            Tier::Unknown => "UNKNOWN",
         };
         println!("\n=== {label}: {} in {} findings", size(total.bytes), total.count);
         for f in report.findings.iter().filter(|f| f.tier == total.tier) {

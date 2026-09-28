@@ -15,5 +15,7 @@ fn main() {
     println!("cargo:rustc-env=LEFTOVER_BUILD_TIME={built}");
     println!("cargo:rerun-if-changed=../.git/HEAD");
     println!("cargo:rerun-if-changed=../.git/refs/heads");
+    // The window and exe icons are embedded at compile time; rebuild when they're regenerated.
+    println!("cargo:rerun-if-changed=icons");
     tauri_build::build()
 }

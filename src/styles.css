@@ -127,6 +127,18 @@ body {
   gap: 8px;
 }
 
+.brand,
+.about-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  flex: none;
+  display: block;
+}
+
 h1 {
   margin: 0;
   font-size: 22px;

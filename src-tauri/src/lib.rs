@@ -6,10 +6,11 @@ pub mod roots;
 pub mod rules;
 pub mod scan;
 mod signals;
+mod titlebar;
 
 use std::sync::Mutex;
 
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Default)]
 struct AppState {
@@ -69,12 +70,25 @@ fn app_info() -> AppInfo {
     }
 }
 
+/// Recolour the title bar when the page switches between light and dark.
+#[tauri::command]
+fn set_titlebar_theme(window: tauri::WebviewWindow, dark: bool) {
+    titlebar::style(&window, dark);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![scan, clean, undo_last, app_info])
+        .setup(|app| {
+            // Dark is the default theme; the page corrects it on load if light is chosen.
+            if let Some(window) = app.get_webview_window("main") {
+                titlebar::style(&window, true);
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![scan, clean, undo_last, app_info, set_titlebar_theme])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

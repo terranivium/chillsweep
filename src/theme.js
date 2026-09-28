@@ -26,6 +26,8 @@
     if (icon) icon.className = mode === "dark" ? "ph-fill ph-moon" : "ph-fill ph-sun";
     const button = document.getElementById("theme-toggle");
     if (button) button.title = mode === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    // Match the native title bar to the page (a no-op outside the app).
+    window.__TAURI__?.core.invoke("set_titlebar_theme", { dark: mode === "dark" }).catch(() => {});
   }
 
   function toggle() {

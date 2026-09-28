@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Leftover</title>
+    <link rel="icon" href="logo.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="vendor/phosphor/regular/style.css" />
     <link rel="stylesheet" href="vendor/phosphor/fill/style.css" />
     <link rel="stylesheet" href="styles.css" />
@@ -14,8 +15,11 @@
   <body>
     <header class="top">
       <div class="brand">
-        <h1>Leftover</h1>
-        <p class="tagline">Finds what uninstalled apps, caches, dev projects and games left behind.</p>
+        <img class="logo" src="logo.svg" width="44" height="44" alt="" />
+        <div>
+          <h1>Leftover</h1>
+          <p class="tagline">Finds what uninstalled apps, caches, dev projects and games left behind.</p>
+        </div>
       </div>
       <div class="top-actions">
         <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light or dark theme">
@@ -81,7 +85,10 @@
 
     <dialog id="about" class="dialog about" aria-labelledby="about-title">
       <div class="dialog-head">
-        <h2 id="about-title">Leftover</h2>
+        <div class="about-brand">
+          <img class="logo" src="logo.svg" width="56" height="56" alt="" />
+          <h2 id="about-title">Leftover</h2>
+        </div>
         <button class="icon-btn small" type="button" data-close aria-label="Close">
           <i class="ph ph-x" aria-hidden="true"></i>
         </button>

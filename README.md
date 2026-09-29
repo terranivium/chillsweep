@@ -1,8 +1,8 @@
-# Leftover
+# ChillSweep
 
 A Windows cleanup app that finds what uninstalled apps, caches, dev projects and games left behind, and explains each item before you remove it.
 
-Most cleaners work from a fixed list of junk locations. Leftover checks your user folders against what is actually installed: the registry's installed programs and publishers, Start menu and desktop shortcuts, running programs, program files, Store apps and Steam libraries. That lets it spot things like:
+Most cleaners work from a fixed list of junk locations. ChillSweep checks your user folders against what is actually installed: the registry's installed programs and publishers, Start menu and desktop shortcuts, running programs, program files, Store apps and Steam libraries. That lets it spot things like:
 
 - app data from programs you've uninstalled ("Docker Desktop isn't installed")
 - config files pointing at folders that no longer exist ("environments.txt points to C:\…\miniconda3, which no longer exists")
@@ -13,7 +13,7 @@ Most cleaners work from a fixed list of junk locations. Leftover checks your use
 - save data for games that aren't installed (flagged as "your call", never as junk)
 - big old videos, installers and archives in Downloads
 
-Every finding lands in a tier (**Safe to clear**, **Leftovers**, **Your call**, **Unknown**) with plain-language evidence and what happens if you remove it. No AI model is involved at runtime: detection is general signals plus a small knowledge base (`src-tauri/rules/default.toml`).
+Every finding lands in a tier (**Safe to clear**, **Leftovers**, **Your call**) with plain-language evidence and what happens if you remove it. No AI model is involved at runtime: detection is general signals plus a small knowledge base (`src-tauri/rules/default.toml`).
 
 ## Safety
 
@@ -22,7 +22,7 @@ Every finding lands in a tier (**Safe to clear**, **Leftovers**, **Your call**, 
 - Nothing is selected by default, and removal needs a confirmation.
 - Only items from the last scan can be removed, and each is re-checked right before removal (still exists, not protected, not in use by a running program).
 - Items go to the Recycle Bin with an Undo button. Only "Safe to clear" items can optionally be deleted permanently.
-- Every removal is logged to `%LOCALAPPDATA%\Leftover\history.jsonl`.
+- Every removal is logged to `%LOCALAPPDATA%\ChillSweep\history.jsonl`.
 
 ## Development
 
@@ -30,10 +30,10 @@ Requires Rust (MSVC toolchain), the Visual Studio C++ Build Tools, and Node.js.
 
 ```sh
 npm install
-npm run tauri dev                              # run the app
-cd src-tauri && cargo test --lib               # unit tests
-cd src-tauri && cargo run --bin leftover-scan  # command-line scan (add --json for raw output)
-npm run tauri build                            # Windows installer
+npm run tauri dev                                # run the app
+cd src-tauri && cargo test --lib                 # unit tests
+cd src-tauri && cargo run --bin chillsweep-scan  # command-line scan (add --json for raw output)
+npm run tauri build                              # Windows installer
 ```
 
 Code layout:

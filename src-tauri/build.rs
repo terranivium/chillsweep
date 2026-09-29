@@ -11,8 +11,8 @@ fn main() {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "dev".into());
     let built = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    println!("cargo:rustc-env=LEFTOVER_GIT_HASH={hash}");
-    println!("cargo:rustc-env=LEFTOVER_BUILD_TIME={built}");
+    println!("cargo:rustc-env=CHILLSWEEP_GIT_HASH={hash}");
+    println!("cargo:rustc-env=CHILLSWEEP_BUILD_TIME={built}");
     println!("cargo:rerun-if-changed=../.git/HEAD");
     println!("cargo:rerun-if-changed=../.git/refs/heads");
     // The window and exe icons are embedded at compile time; rebuild when they're regenerated.

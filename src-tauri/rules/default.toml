@@ -1,4 +1,4 @@
-# Leftover knowledge base.
+# ChillSweep knowledge base.
 #
 # Detection must work without any [[rule]] entry: the general signals in src/signals/ find
 # leftovers, caches and clutter on their own. Rules only add better wording, catch a few
@@ -12,9 +12,12 @@
 # folders), and anything that *contains* one of these is never flagged either. The targeted
 # signals (Downloads, game saves, git repos) and explicit [[rule]] entries still look inside.
 protected = [
-  '%LOCALAPPDATA%\com.leftover.app',   # Leftover's own WebView data
+  '%LOCALAPPDATA%\com.chillsweep.app', # ChillSweep's own WebView data
+  '%APPDATA%\com.chillsweep.app',
+  '%LOCALAPPDATA%\ChillSweep',         # ChillSweep's clean-up history
+  '%LOCALAPPDATA%\com.leftover.app',   # the same, from when the app was called Leftover
   '%APPDATA%\com.leftover.app',
-  '%LOCALAPPDATA%\Leftover',           # Leftover's clean-up history
+  '%LOCALAPPDATA%\Leftover',
   '%USERPROFILE%\.ssh',
   '%USERPROFILE%\.gnupg',
   '%USERPROFILE%\.claude',

@@ -1,4 +1,4 @@
-Leftover includes the following third-party software.
+ChillSweep includes the following third-party software.
 
 --------------------------------------------------------------------------------
 Phosphor Icons 2.1.2 (MIT)

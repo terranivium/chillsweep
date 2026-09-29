@@ -471,6 +471,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "chillsweep"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tempfile",
+ "toml 1.1.6+spec-1.1.0",
+ "trash",
+ "windows-sys 0.59.0",
+ "winreg 0.56.0",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1957,26 +1977,6 @@ checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
 dependencies = [
  "bitflags 2.13.2",
  "serde",
-]
-
-[[package]]
-name = "leftover"
-version = "0.1.0"
-dependencies = [
- "ignore",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tempfile",
- "toml 1.1.6+spec-1.1.0",
- "trash",
- "windows-sys 0.59.0",
- "winreg 0.56.0",
 ]
 
 [[package]]

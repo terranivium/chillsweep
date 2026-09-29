@@ -256,7 +256,7 @@ mod tests {
     }
 
     fn fixture(root: &Path) -> std::path::PathBuf {
-        let dir = root.join("leftover-test-fixture");
+        let dir = root.join("chillsweep-test-fixture");
         fs::create_dir_all(dir.join("nested")).unwrap();
         fs::write(dir.join("a.bin"), vec![0u8; 2048]).unwrap();
         fs::write(dir.join(r"nested\b.bin"), vec![0u8; 1024]).unwrap();
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn rejects_protected_paths() {
         // Inside ~/.ssh, and deliberately nonexistent so a bug could never touch real files.
-        let path = Roots::detect().home.join(r".ssh\leftover-test-does-not-exist");
+        let path = Roots::detect().home.join(r".ssh\chillsweep-test-does-not-exist");
         let r = clean(&report_with(Tier::Leftover, &path), &["f1".into()], true, &ctx());
         assert_eq!(r.outcomes[0].method, Method::Skipped);
         assert_eq!(r.outcomes[0].error.as_deref(), Some("This location is protected."));

@@ -1,4 +1,4 @@
-// Generates the Leftover icon set: an open fridge with leftovers on the shelves, drawn in Vocal
+// Generates the ChillSweep icon set: an open fridge with leftovers on the shelves, drawn in Vocal
 // Slice's style, a blue→mauve mark on a dark Catppuccin tile.
 //
 //   node brand/build-icon.mjs          → writes brand/icon.svg, brand/mark.svg and src/logo.svg,
@@ -90,7 +90,7 @@ const ROOT = join(BRAND, "..");
 const ICONS = join(ROOT, "src-tauri", "icons");
 copyFileSync(join(BRAND, "icon.svg"), join(ROOT, "src", "logo.svg"));
 
-const tmp = mkdtempSync(join(tmpdir(), "leftover-icons-"));
+const tmp = mkdtempSync(join(tmpdir(), "chillsweep-icons-"));
 try {
   execSync(`npx tauri icon "${join(BRAND, "icon.svg")}" -o "${tmp}"`, { cwd: ROOT, stdio: "ignore" });
   // Only the files tauri.conf.json and the Windows bundle use; skip the Android/iOS output.

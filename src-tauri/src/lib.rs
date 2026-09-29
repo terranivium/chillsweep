@@ -36,7 +36,7 @@ async fn clean(state: State<'_, AppState>, finding_ids: Vec<String>, permanent_s
     let result = tauri::async_runtime::spawn_blocking(move || {
         let ctx = clean::guard_ctx();
         let result = clean::clean(&report, &finding_ids, permanent_safe, &ctx);
-        let _ = clean::append_history(&ctx.roots.local.join("Leftover"), &result);
+        let _ = clean::append_history(&ctx.roots.local.join("ChillSweep"), &result);
         result
     })
     .await
@@ -65,8 +65,8 @@ struct AppInfo {
 fn app_info() -> AppInfo {
     AppInfo {
         version: env!("CARGO_PKG_VERSION"),
-        git_hash: env!("LEFTOVER_GIT_HASH"),
-        build_time: env!("LEFTOVER_BUILD_TIME").parse().unwrap_or(0),
+        git_hash: env!("CHILLSWEEP_GIT_HASH"),
+        build_time: env!("CHILLSWEEP_BUILD_TIME").parse().unwrap_or(0),
     }
 }
 

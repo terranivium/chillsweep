@@ -1,7 +1,7 @@
-//! Command-line scan: `leftover-scan` prints a readable report, `leftover-scan --json` the raw report.
+//! Command-line scan: `chillsweep-scan` prints a readable report, `chillsweep-scan --json` the raw report.
 
-use leftover_lib::report::Tier;
-use leftover_lib::scan;
+use chillsweep_lib::report::Tier;
+use chillsweep_lib::scan;
 
 fn size(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];

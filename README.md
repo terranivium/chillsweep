@@ -39,7 +39,7 @@ Requires Rust (MSVC toolchain), the Visual Studio C++ Build Tools, and Node.js 2
 npm install
 npm run tauri dev                                # run the app
 cd src-tauri && cargo test --lib                 # unit tests
-cd src-tauri && cargo run --bin chillsweep-scan  # command-line scan (add --json for raw output)
+cd src-tauri && cargo run --example scan         # command-line scan (add -- --json for raw output)
 npm run notices                                  # regenerate src/third-party-notices.txt after dependency changes
 npm run build                                    # Windows installer, versioned 1.{commit count}.0
 npm run release                                  # build, sign and upload a draft release (see RELEASING.md)

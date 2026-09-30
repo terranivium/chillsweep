@@ -1,4 +1,5 @@
-//! Command-line scan: `chillsweep-scan` prints a readable report, `chillsweep-scan --json` the raw report.
+//! Command-line scan for development: `cargo run --example scan` prints a readable report, `-- --json`
+//! the raw report. An example rather than a [[bin]] so the installer doesn't ship it.
 
 use chillsweep_lib::report::Tier;
 use chillsweep_lib::scan;

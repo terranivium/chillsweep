@@ -19,6 +19,8 @@ the commit that renamed a heading would itself bump the count and make that head
 
 ## Unreleased
 
+- The install folder no longer contains a stray `chillsweep-scan.exe`. It was a developer tool included by mistake, and updating removes it.
+
 ## 1.5.0 — 2026-09-30
 
 First public release.

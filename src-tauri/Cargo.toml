@@ -1,9 +1,12 @@
 [package]
 name = "chillsweep"
-version = "0.1.0"
+version = "1.0.0"
 description = "Finds leftovers from uninstalled apps, caches, and dev/game clutter on Windows"
 authors = ["Wesley Scott"]
+license = "GPL-3.0-only"
+repository = "https://github.com/terranivium/chillsweep"
 edition = "2021"
+publish = false
 default-run = "chillsweep"
 
 [lib]
@@ -32,6 +35,7 @@ regex = "1"
 ignore = "0.4"
 sysinfo = "0.39"
 trash = "5"
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Controls", "Win32_Graphics_Dwm"] }

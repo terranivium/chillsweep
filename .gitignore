@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Release secrets (see release.env.example) and generated release notes
+release.env
+src/changelog.json
+# Updater signing keys belong in %USERPROFILE%\.tauri\, never in the repo
+*.key
+*.key.pub

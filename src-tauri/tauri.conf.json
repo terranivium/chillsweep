@@ -1,10 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ChillSweep",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.chillsweep.app",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../src",
+    "beforeDevCommand": { "script": "node build-scripts/changelog-json.mjs", "wait": true },
+    "beforeBuildCommand": "node build-scripts/changelog-json.mjs"
   },
   "app": {
     "withGlobalTauri": true,
@@ -23,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -31,5 +33,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZBODY3NTVDMDU2MjI5ODUKUldTRktXSUZYSFdHK3VYQWkrVUN5b21SZ0FIM0RHV1JNUGdyS2sxRm1zelAreURBYytWVTYvYkEK",
+      "endpoints": [
+        "https://github.com/terranivium/chillsweep/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

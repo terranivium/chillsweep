@@ -43,6 +43,18 @@
         <p class="muted">Scanning only reads. Nothing is removed until you choose items and confirm.</p>
       </section>
 
+      <section id="update-bar" class="update-bar" role="status" hidden>
+        <i class="ph ph-sparkle" aria-hidden="true"></i>
+        <p id="update-text"></p>
+        <button id="update-notes" class="link" type="button">What's new</button>
+        <button id="update-install" class="primary" type="button" hidden>
+          <i class="ph ph-arrow-circle-down" aria-hidden="true"></i><span class="label">Update and restart</span>
+        </button>
+        <button id="update-dismiss" class="icon-btn small" type="button" aria-label="Dismiss">
+          <i class="ph ph-x" aria-hidden="true"></i>
+        </button>
+      </section>
+
       <p id="status" class="status" role="status" hidden></p>
 
       <section id="outcome" class="outcome" hidden>
@@ -101,6 +113,9 @@
         <div><span>Built</span><span id="about-built">—</span></div>
       </div>
 
+      <h3 id="whats-new-heading" class="about-heading">What's new</h3>
+      <div id="whats-new" class="whats-new"></div>
+
       <h3 class="about-heading">How it works</h3>
       <p class="about-text">
         A scan only reads your folders and the registry; it never changes anything or starts other programs.
@@ -109,7 +124,10 @@
       </p>
 
       <h3 class="about-heading">Legal</h3>
-      <p class="about-text">© 2026 Wesley Scott. All rights reserved.</p>
+      <p class="about-text">
+        © 2026 Wesley Scott. ChillSweep is free software under the GNU General Public License v3; source at
+        github.com/terranivium/chillsweep.
+      </p>
       <div class="dialog-actions start">
         <button id="notices-open" class="secondary" type="button">
           <i class="ph ph-scroll" aria-hidden="true"></i><span class="label">Third-party licenses</span>

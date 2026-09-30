@@ -307,9 +307,11 @@ async function undoLast() {
 
 let aboutFilled = false;
 
-async function openAbout() {
+async function openAbout({ whatsNew = false } = {}) {
   $("#about").showModal();
+  if (whatsNew) $("#whats-new-heading").scrollIntoView({ block: "start" });
   if (aboutFilled) return;
+  renderWhatsNew();
   try {
     const info = await invoke("app_info");
     $("#about-version").textContent = `v${info.version}`;
@@ -318,6 +320,120 @@ async function openAbout() {
     aboutFilled = true;
   } catch (e) {
     $("#about-version").textContent = `Unavailable (${e})`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// What's new: CHANGELOG.md, baked into changelog.json at build time
+// ---------------------------------------------------------------------------
+
+/** Inline segments ({type, value}) from build-scripts/changelog-data.mjs, as DOM nodes. */
+function segmentNodes(segments) {
+  const tags = { code: "code", strong: "strong", em: "em" };
+  return segments.map((s) => (tags[s.type] ? el(tags[s.type], null, s.value) : document.createTextNode(s.value)));
+}
+
+function humanDate(iso) {
+  // Explicit UTC: a bare "2026-08-11" parses as midnight UTC and shows the day before west of Greenwich.
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+async function renderWhatsNew() {
+  const box = $("#whats-new");
+  let releases;
+  try {
+    const res = await fetch("changelog.json");
+    releases = res.ok ? await res.json() : [];
+  } catch {
+    releases = [];
+  }
+  if (!releases.length) {
+    box.replaceChildren(el("p", "about-text", "No release notes in this build."));
+    return;
+  }
+  box.replaceChildren(
+    ...releases.map((r) => {
+      const section = el("section", "release");
+      section.append(el("h4", null, `${r.version} · ${humanDate(r.date)}`));
+      for (const b of r.blocks) {
+        if (b.type === "list") {
+          const ul = el("ul");
+          for (const item of b.items) {
+            const li = el("li");
+            li.append(...segmentNodes(item));
+            ul.append(li);
+          }
+          section.append(ul);
+        } else {
+          const p = el("p");
+          p.append(...segmentNodes(b.text));
+          section.append(p);
+        }
+      }
+      return section;
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Updates: published releases on GitHub (drafts never show up). Release builds only.
+// ---------------------------------------------------------------------------
+
+const LAST_VERSION_KEY = "chillsweep.lastVersion";
+
+function showUpdateBar(text, { install = false } = {}) {
+  $("#update-text").textContent = text;
+  $("#update-install").hidden = !install;
+  // The notes shipped in this build describe this build, so the link only fits "Updated to".
+  $("#update-notes").hidden = install;
+  $("#update-bar").hidden = false;
+}
+
+function newer(a, b) {
+  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] > pb[i];
+  return false;
+}
+
+/** Say once that an update landed, then look for the next one. */
+async function checkUpdates() {
+  try {
+    const { version } = await invoke("app_info");
+    let last = null;
+    try {
+      last = localStorage.getItem(LAST_VERSION_KEY);
+      localStorage.setItem(LAST_VERSION_KEY, version);
+    } catch {
+      // Storage unavailable: skip the "updated" note, it's only a courtesy.
+    }
+    if (last && newer(version, last)) showUpdateBar(`Updated to ChillSweep ${version}.`);
+  } catch {
+    // No version to compare; carry on to the check.
+  }
+
+  let update = null;
+  try {
+    update = await invoke("check_update");
+  } catch {
+    return; // Offline, or GitHub unreachable. Nothing worth interrupting anyone for.
+  }
+  if (update) showUpdateBar(`ChillSweep ${update.version} is available.`, { install: true });
+}
+
+async function installUpdate() {
+  const button = $("#update-install");
+  button.disabled = true;
+  button.querySelector(".label").textContent = "Downloading…";
+  try {
+    // On success the installer closes ChillSweep and reopens the new version; this doesn't return.
+    await invoke("install_update");
+  } catch (e) {
+    // The pending update was used up, so the button goes; the next launch checks again.
+    showUpdateBar(`The update didn't install: ${e}`);
+    $("#update-notes").hidden = true;
+    button.disabled = false;
+    button.querySelector(".label").textContent = "Update and restart";
   }
 }
 
@@ -335,7 +451,11 @@ async function openNotices() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  $("#about-open").addEventListener("click", openAbout);
+  $("#about-open").addEventListener("click", () => openAbout());
+  $("#update-notes").addEventListener("click", () => openAbout({ whatsNew: true }));
+  $("#update-install").addEventListener("click", installUpdate);
+  $("#update-dismiss").addEventListener("click", () => ($("#update-bar").hidden = true));
+  checkUpdates();
   $("#notices-open").addEventListener("click", openNotices);
   for (const button of document.querySelectorAll("dialog [data-close]")) {
     button.addEventListener("click", () => button.closest("dialog").close());

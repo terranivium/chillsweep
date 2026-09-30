@@ -610,6 +610,30 @@ body.has-selection main {
   font-weight: 600;
 }
 
+/* Update available / updated: the outcome panel's shape, in the accent colour. */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.update-bar > i {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.update-bar p {
+  flex: 1;
+  margin: 0;
+  font-weight: 600;
+}
+
 .problems {
   margin: 8px 0 0;
   padding-left: 18px;
@@ -735,6 +759,44 @@ body.has-selection main {
   margin: 0;
   color: var(--subtext1);
   font-size: 13.5px;
+}
+
+/* What's new: every release, newest first, in a box that scrolls on its own. */
+.whats-new {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 6px;
+  color: var(--subtext1);
+  font-size: 13.5px;
+}
+
+.whats-new h4 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.whats-new .release + .release {
+  margin-top: 14px;
+}
+
+.whats-new p,
+.whats-new ul {
+  margin: 0 0 6px;
+}
+
+.whats-new ul {
+  padding-left: 18px;
+}
+
+.whats-new li + li {
+  margin-top: 4px;
+}
+
+.whats-new code {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 /* Third-party licenses: tall, and only the body scrolls. */

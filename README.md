@@ -2,6 +2,8 @@
 
 A Windows cleanup app that finds what uninstalled apps, caches, dev projects and games left behind, and explains each item before you remove it.
 
+**Download:** [ChillSweep-Setup.exe](https://github.com/terranivium/chillsweep/releases/latest/download/ChillSweep-Setup.exe) (Windows 10/11). Each [release](https://github.com/terranivium/chillsweep/releases) lists its SHA-256 and what's new. The installer isn't code-signed yet, so SmartScreen asks you to confirm on first run.
+
 Most cleaners work from a fixed list of junk locations. ChillSweep checks your user folders against what is actually installed: the registry's installed programs and publishers, Start menu and desktop shortcuts, running programs, program files, Store apps and Steam libraries. That lets it spot things like:
 
 - app data from programs you've uninstalled ("Docker Desktop isn't installed")
@@ -23,18 +25,23 @@ Every finding lands in a tier (**Safe to clear**, **Leftovers**, **Your call**) 
 - Only items from the last scan can be removed, and each is re-checked right before removal (still exists, not protected, not in use by a running program).
 - Items go to the Recycle Bin with an Undo button. Only "Safe to clear" items can optionally be deleted permanently.
 - Every removal is logged to `%LOCALAPPDATA%\ChillSweep\history.jsonl`.
+- The only thing ChillSweep fetches from the internet is its update check: on startup it reads `latest.json` from this repo's [releases](https://github.com/terranivium/chillsweep/releases). Updates are signed and only install when you choose to.
 
 ## Development
 
-Requires Rust (MSVC toolchain), the Visual Studio C++ Build Tools, and Node.js.
+Requires Rust (MSVC toolchain), the Visual Studio C++ Build Tools, and Node.js 22+.
 
 ```sh
 npm install
 npm run tauri dev                                # run the app
 cd src-tauri && cargo test --lib                 # unit tests
 cd src-tauri && cargo run --bin chillsweep-scan  # command-line scan (add --json for raw output)
-npm run tauri build                              # Windows installer
+npm run notices                                  # regenerate src/third-party-notices.txt after dependency changes
+npm run build                                    # Windows installer, versioned 1.{commit count}.0
+npm run release                                  # build, sign and upload a draft release (see RELEASING.md)
 ```
+
+User-facing changes get a bullet under `## Unreleased` in `CHANGELOG.md` as they're made; that becomes the release notes and the app's About → What's new.
 
 Code layout:
 
@@ -43,3 +50,8 @@ Code layout:
 - `src-tauri/src/clean.rs`: removal, undo and history
 - `src-tauri/rules/default.toml`: protected paths and the knowledge base
 - `src/`: the UI (plain HTML, CSS and JavaScript)
+- `build-scripts/`: versioning, the release pipeline and the changelog bake
+
+## License
+
+ChillSweep is free software, licensed under the [GNU General Public License v3.0](LICENSE). The third-party components it bundles, and their licenses, are listed in [`src/third-party-notices.txt`](src/third-party-notices.txt).

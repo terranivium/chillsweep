@@ -1,0 +1,312 @@
+// Fills in the GitHub release description after publish.mjs has uploaded the build.
+//
+//   node build-scripts/release-notes.mjs                 (chained onto npm run release)
+//   node build-scripts/release-notes.mjs --refresh       re-pull the in-flight release's notes
+//   node build-scripts/release-notes.mjs --notes=1.42.0  rewrite ONE release's notes, nothing else
+//   node build-scripts/release-notes.mjs --promote       close a shipped version out in CHANGELOG.md
+//
+// Ported from Vocal Slice. Writes two blocks into the draft's body:
+//
+//   whatsnew  — lifted from CHANGELOG.md's "## Unreleased". Written only when ABSENT (or --refresh):
+//               once it exists, generated or hand-typed, it's never touched again.
+//   checksums — ALWAYS regenerated from dist/, merging rows by filename.
+//
+// Anything outside both marker pairs is preserved. CHANGELOG.md is authoritative for every release,
+// past and present: notes are never written in the GitHub UI, so the two can't diverge. This never
+// publishes the draft.
+
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { changelogPath, changelogSection, headingRe, readChangelog } from "./changelog-data.mjs";
+import { client, expectOk, INSTALLER, listReleases, STAGE, token } from "./github.mjs";
+import { git, version } from "./version.mjs";
+
+export const START = "<!-- checksums:start -->";
+export const END = "<!-- checksums:end -->";
+export const WN_START = "<!-- whatsnew:start -->";
+export const WN_END = "<!-- whatsnew:end -->";
+export const SEED = "- …";
+
+// Only files a human downloads; the .sig and latest.json are the updater's.
+export const DOWNLOADABLE = /\.exe$/i;
+
+// Records the commit this release was built from, so the NEXT release has a diff range for the
+// commit-subject fallback. The tag would say the same once published, but a draft has no tag yet.
+// HTML comments don't render on GitHub.
+const COMMIT_RE = /<!--\s*cs:commit\s+([0-9a-f]{7,40})\s*-->/;
+const MAX_BULLETS = 12;
+
+// --flag → true, --flag=value → "value", absent → undefined
+function flag(name) {
+  const hit = process.argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+  if (hit === undefined) return undefined;
+  const eq = hit.indexOf("=");
+  return eq === -1 ? true : hit.slice(eq + 1);
+}
+
+const stripV = (v) => String(v).replace(/^v/i, "");
+const mb = (b) => (b / 1048576).toFixed(1) + " MB";
+// Editing a release in the GitHub UI rewrites the body as CRLF; compare and parse line-ending-blind.
+const lf = (s) => s.replace(/\r\n/g, "\n");
+
+function sha256(file) {
+  return new Promise((resolve, reject) => {
+    const h = createHash("sha256");
+    createReadStream(file).on("error", reject).on("data", (c) => h.update(c)).on("end", () => resolve(h.digest("hex")));
+  });
+}
+
+// ── Checksums block ──────────────────────────────────────────────────────────
+
+// Keyed by filename, so a re-run updates rows instead of duplicating them. Split on /\r?\n/: after a
+// GitHub UI edit every line would otherwise keep a trailing \r and nothing would match.
+export function parseRows(block) {
+  const rows = new Map();
+  for (const line of block.split(/\r?\n/)) {
+    const m = line.match(/^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([0-9a-f]{64})`\s*\|$/);
+    if (m) rows.set(m[1], { name: m[1], size: m[2], hash: m[3] });
+  }
+  return rows;
+}
+
+function renderBlock(rows) {
+  const sorted = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [
+    START,
+    "",
+    `Download **\`${INSTALLER}\`** and run it. \`${INSTALLER}.sig\` and \`latest.json\` are what the app updates itself from, not manual downloads.`,
+    "",
+    "### SHA-256 checksums",
+    "",
+    "| File | Size | SHA-256 |",
+    "| --- | --- | --- |",
+    ...sorted.map((r) => `| \`${r.name}\` | ${r.size} | \`${r.hash}\` |`),
+    "",
+    "Verify: `certutil -hashfile <file> SHA256`",
+    "",
+    "---",
+    "",
+    "ChillSweep isn't code-signed yet, so SmartScreen warns on first run: choose **More info → Run anyway**. " +
+      "The checksum above is how you verify the download.",
+    END,
+  ].join("\n");
+}
+
+// ── What's new block ─────────────────────────────────────────────────────────
+
+// Fallback when CHANGELOG.md is empty: commit subjects since the previous release. They read as
+// internal notes, so this keeps a release moving and warns, rather than being the intent.
+function commitsSince(sha) {
+  const out = git(["log", `${sha}..HEAD`, "--no-merges", "--pretty=%s"]);
+  if (out === null) return null;
+  const seen = new Set();
+  const bullets = [];
+  for (const line of out.split("\n")) {
+    const s = line.trim();
+    if (!s || seen.has(s.toLowerCase())) continue;
+    seen.add(s.toLowerCase());
+    bullets.push(`- ${s.charAt(0).toUpperCase()}${s.slice(1)}`);
+    if (bullets.length >= MAX_BULLETS) break;
+  }
+  return bullets.length ? bullets.join("\n") : null;
+}
+
+function renderWhatsNew(content, sha) {
+  return [WN_START, "", "## What's new", "", content, "", `<!-- cs:commit ${sha || "unknown"} -->`, WN_END].join("\n");
+}
+
+/** The prose alone (no markers, heading or commit marker): what compares against a CHANGELOG section. */
+export function whatsNewProse(body) {
+  const b = lf(body || "");
+  const s = b.indexOf(WN_START), e = b.indexOf(WN_END);
+  if (s === -1 || e === -1) return null;
+  return b.slice(s + WN_START.length, e).replace(COMMIT_RE, "").trim().replace(/^##[ \t]+What's new[ \t]*\n+/i, "").trim();
+}
+
+const existingCommit = (body) => ((body || "").match(COMMIT_RE) || [])[1] || null;
+
+function spliceWhatsNew(body, wn) {
+  const s = body.indexOf(WN_START), e = body.indexOf(WN_END);
+  return s !== -1 && e !== -1
+    ? body.slice(0, s) + wn + body.slice(e + WN_END.length)
+    : (wn + "\n\n" + body.trimStart()).trimEnd() + "\n";
+}
+
+// ── --notes[=version] ────────────────────────────────────────────────────────
+// Rewrites ONE release's "What's new" from its CHANGELOG section and nothing else. It shares no code
+// with the checksum path on purpose: that table is hashed from whatever sits in dist/ now, so running
+// it against an old release would publish the CURRENT build's hashes as that release's.
+async function notesOnly(arg, all, patch) {
+  const ver = stripV(typeof arg === "string" && arg ? arg : version());
+  const tag = `v${ver}`;
+  const release = all.find((r) => r.tag_name === tag);
+  if (!release) {
+    console.error(`release-notes: no release tagged ${tag}. Known: ${all.map((r) => r.tag_name).join(", ") || "(none)"}`);
+    return;
+  }
+  // A shipped version reads its own heading. "## Unreleased" is only right for the one being built.
+  let content = changelogSection(ver);
+  let from = `CHANGELOG.md (## ${ver})`;
+  if (!content && ver === version()) {
+    content = changelogSection("Unreleased");
+    from = "CHANGELOG.md (## Unreleased)";
+  }
+  if (!content) {
+    console.error(`release-notes: CHANGELOG.md has no "## ${ver}" section.`);
+    return;
+  }
+  const body = release.body || "";
+  // Keep that release's own commit marker: the next release derives its diff range from it.
+  const next = spliceWhatsNew(body, renderWhatsNew(content, existingCommit(body) || git(["rev-parse", "HEAD"])));
+  if (next === body) return console.log(`release-notes: ${tag} already matches ${from}.`);
+  await patch(release, next);
+  console.log(`release-notes: ${tag} — What's new <- ${from} (checksums untouched, draft=${release.draft})`);
+}
+
+// ── --promote[=version] ──────────────────────────────────────────────────────
+// Local file edit only: renames "## Unreleased" to "## {version} — {date}" and opens a fresh, EMPTY
+// Unreleased above it. Empty is deliberate, so the next release warns that nothing was written rather
+// than silently republishing these notes.
+export function promote(ver, date) {
+  const text = readChangelog();
+  if (text === null) return console.error("release-notes: no CHANGELOG.md.");
+  if (headingRe(ver).test(text)) return console.error(`release-notes: CHANGELOG.md already has "## ${ver}" — nothing to do.`);
+  const h = text.match(headingRe("Unreleased"));
+  if (!h) return console.error('release-notes: CHANGELOG.md has no "## Unreleased" heading to promote.');
+  const heading = `## ${ver} — ${date}`;
+  // Match the file's own line endings rather than leaving it mixed.
+  const nl = text.includes("\r\n") ? "\r\n" : "\n";
+  writeFileSync(changelogPath(), text.slice(0, h.index) + `## Unreleased${nl}${nl}${heading}` + text.slice(h.index + h[0].length));
+  console.log(`release-notes: CHANGELOG.md — "## Unreleased" -> "${heading}", fresh empty Unreleased above it.`);
+  console.log("   Not committed — review the diff, then commit.");
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  const promoteArg = flag("promote");
+  // A version given explicitly needs no network: promote it locally.
+  if (typeof promoteArg === "string" && promoteArg) return promote(stripV(promoteArg), new Date().toISOString().slice(0, 10));
+
+  const tok = token();
+  if (!tok) {
+    console.error("release-notes: no GH_TOKEN (release.env or the environment) — skipping.");
+    process.exitCode = 1;
+    return;
+  }
+  const api = client(tok);
+  const all = await listReleases(api);
+
+  // tag_name MUST be resent: PATCHing a draft without it makes GitHub drop the tag association, and
+  // the release comes back as untagged-<hash>, which publish.mjs then can't find by tag.
+  const patch = async (rel, body) =>
+    expectOk(
+      await api(`/releases/${rel.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body, tag_name: rel.tag_name }),
+      }),
+    );
+
+  if (promoteArg !== undefined) {
+    // The newest published release is the one being closed out.
+    const newest = all.find((r) => !r.draft);
+    if (!newest) return console.error("release-notes: no published release to promote.");
+    return promote(stripV(newest.tag_name), (newest.published_at || new Date().toISOString()).slice(0, 10));
+  }
+
+  const notesArg = flag("notes");
+  if (notesArg !== undefined) return notesOnly(notesArg, all, patch);
+
+  const tag = `v${version()}`;
+  const release = all.find((r) => r.tag_name === tag);
+  if (!release) {
+    console.error(`release-notes: no release tagged ${tag} — run publish first.`);
+    process.exitCode = 1;
+    return;
+  }
+  const others = all.filter((r) => r.id !== release.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  // Hash only what is actually on the release, so the table lists exactly what a user can download.
+  const published = new Set(release.assets.map((a) => a.name));
+  const local = existsSync(STAGE)
+    ? readdirSync(STAGE).filter((f) => DOWNLOADABLE.test(f) && published.has(f) && statSync(join(STAGE, f)).isFile())
+    : [];
+  if (local.length === 0) {
+    console.error("release-notes: nothing in dist/ matches the release's downloadable assets — run publish first.");
+    process.exitCode = 1;
+    return;
+  }
+
+  const body = lf(release.body || "");
+  let next = body;
+  let wnSource = null;
+
+  // ── What's new ─────────────────────────────────────────────────────────────
+  const hasWn = next.includes(WN_START) && next.includes(WN_END);
+  if (!hasWn || flag("refresh") !== undefined) {
+    let content = changelogSection("Unreleased");
+    if (content) {
+      wnSource = "CHANGELOG.md (## Unreleased)";
+    } else {
+      const prev = others.find((r) => COMMIT_RE.test(r.body || ""));
+      const prevSha = prev && existingCommit(prev.body);
+      content = prevSha && commitsSince(prevSha);
+      if (content) {
+        wnSource = `git log ${prevSha.slice(0, 7)}..HEAD`;
+        console.error(
+          `release-notes: CHANGELOG.md has no "## Unreleased" content — fell back to commit subjects since ${prev.tag_name}.\n` +
+            "  Those read as internal notes. Write the CHANGELOG and re-run with --refresh before publishing.",
+        );
+      } else {
+        content = SEED;
+        wnSource = "placeholder";
+        console.error("release-notes: no CHANGELOG content and no previous release to diff — seeded a placeholder.");
+      }
+    }
+    // The real failure mode: forget to promote, and the next release republishes the last one's notes.
+    const lastPublished = others.find((r) => !r.draft);
+    if (lastPublished && whatsNewProse(lastPublished.body) === content) {
+      console.error(
+        `release-notes: WARNING — these notes are identical to ${lastPublished.tag_name}.\n` +
+          "  CHANGELOG.md's \"## Unreleased\" was probably never promoted. Run: npm run changelog:promote",
+      );
+    }
+    next = spliceWhatsNew(next, renderWhatsNew(content, git(["rev-parse", "HEAD"])));
+  } else {
+    const changelog = changelogSection("Unreleased");
+    if (changelog && whatsNewProse(next) !== changelog) {
+      console.error(
+        `release-notes: note — ${tag}'s "What's new" differs from CHANGELOG.md, which is authoritative.\n` +
+          "  Run with --refresh to push it over the release page.",
+      );
+    }
+  }
+
+  // ── Checksums ──────────────────────────────────────────────────────────────
+  const s = next.indexOf(START), e = next.indexOf(END);
+  const rows = s !== -1 && e !== -1 ? parseRows(next.slice(s, e)) : new Map();
+  for (const f of local) {
+    const full = join(STAGE, f);
+    rows.set(f, { name: f, size: mb(statSync(full).size), hash: await sha256(full) });
+  }
+  const block = renderBlock(rows);
+  next = s !== -1 && e !== -1 ? next.slice(0, s) + block + next.slice(e + END.length) : (next.trim() ? next.trimEnd() + "\n\n" : "") + block + "\n";
+
+  if (next === body) return console.log("release-notes: body already up to date.");
+  await patch(release, next);
+
+  console.log(`release-notes: ${tag} updated`);
+  for (const r of rows.values()) console.log(`   ${r.name.padEnd(26)} ${r.size.padStart(8)}  ${r.hash.slice(0, 16)}…`);
+  console.log(wnSource ? `   what's new  <- ${wnSource}` : "   what's new  unchanged (already written — use --refresh to re-pull)");
+  console.log(`   draft=${release.draft} (publishing stays manual)`);
+  console.log("\n   Next: npm run release:check, publish by hand, then npm run changelog:promote");
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    console.error(`release-notes failed: ${err.message}`);
+    process.exitCode = 1;
+  });
+}

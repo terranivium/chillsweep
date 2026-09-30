@@ -1,10 +1,17 @@
 {
   "name": "chillsweep",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build": "node build-scripts/pack.mjs",
+    "release": "node build-scripts/pack.mjs --release && node build-scripts/publish.mjs && node build-scripts/release-notes.mjs",
+    "release:check": "node build-scripts/release-check.mjs",
+    "release-notes": "node build-scripts/release-notes.mjs",
+    "changelog:promote": "node build-scripts/release-notes.mjs --promote",
+    "notices": "cd src-tauri && cargo about generate --frozen --fail about.hbs -o ../src/third-party-notices.txt"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

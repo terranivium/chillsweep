@@ -10,7 +10,8 @@ mod titlebar;
 
 use std::sync::Mutex;
 
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Default)]
 struct AppState {
@@ -18,6 +19,8 @@ struct AppState {
     last_report: Mutex<Option<report::Report>>,
     /// What the last clean sent to the Recycle Bin, and when, for undo.
     last_recycled: Mutex<Option<(Vec<String>, u64)>>,
+    /// An update found by `check_update`, waiting for the user to install it.
+    pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
 }
 
 /// Scan the user's folders. Read-only: nothing is changed, nothing else is launched.
@@ -54,7 +57,7 @@ async fn undo_last(state: State<'_, AppState>) -> Result<clean::RestoreResult, S
 
 #[derive(serde::Serialize)]
 struct AppInfo {
-    version: &'static str,
+    version: String,
     git_hash: &'static str,
     /// Unix seconds.
     build_time: u64,
@@ -62,12 +65,39 @@ struct AppInfo {
 
 /// Version and build details for the About screen.
 #[tauri::command]
-fn app_info() -> AppInfo {
+fn app_info(app: AppHandle) -> AppInfo {
     AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
+        // Set per build by build-scripts/pack.mjs (1.{commit count}.0), so it matches what the updater compares.
+        version: app.package_info().version.to_string(),
         git_hash: env!("CHILLSWEEP_GIT_HASH"),
         build_time: env!("CHILLSWEEP_BUILD_TIME").parse().unwrap_or(0),
     }
+}
+
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+}
+
+/// Ask the releases feed whether a newer version is published. Drafts never appear there.
+/// Debug builds never check, so `tauri dev` is never offered an update.
+#[tauri::command]
+async fn check_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
+    if cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let info = update.as_ref().map(|u| UpdateInfo { version: u.version.clone() });
+    *state.pending_update.lock().unwrap() = update;
+    Ok(info)
+}
+
+/// Download, verify and run the installer for the update `check_update` found. On Windows the
+/// installer closes the app and starts the new version itself, so this only returns on failure.
+#[tauri::command]
+async fn install_update(state: State<'_, AppState>) -> Result<(), String> {
+    let update = state.pending_update.lock().unwrap().take().ok_or("No update to install.")?;
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())
 }
 
 /// Recolour the title bar when the page switches between light and dark.
@@ -80,6 +110,7 @@ fn set_titlebar_theme(window: tauri::WebviewWindow, dark: bool) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .setup(|app| {
             // Dark is the default theme; the page corrects it on load if light is chosen.
@@ -88,7 +119,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![scan, clean, undo_last, app_info, set_titlebar_theme])
+        .invoke_handler(tauri::generate_handler![scan, clean, undo_last, app_info, check_update, install_update, set_titlebar_theme])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -19,6 +19,8 @@ the commit that renamed a heading would itself bump the count and make that head
 
 ## Unreleased
 
+## 1.5.0 — 2026-09-30
+
 First public release.
 
 - ChillSweep checks your user folders against what's actually installed, so it can find what uninstalled apps, old app versions, caches, dev projects and games left behind.

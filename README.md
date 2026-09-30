@@ -1,8 +1,12 @@
+<img src="brand/icon.svg" width="96" alt="ChillSweep icon: an open fridge with leftovers">
+
 # ChillSweep
 
 A Windows cleanup app that finds what uninstalled apps, caches, dev projects and games left behind, and explains each item before you remove it.
 
 **Download:** [ChillSweep-Setup.exe](https://github.com/terranivium/chillsweep/releases/latest/download/ChillSweep-Setup.exe) (Windows 10/11). Each [release](https://github.com/terranivium/chillsweep/releases) lists its SHA-256 and what's new. The installer isn't code-signed yet, so SmartScreen asks you to confirm on first run.
+
+![ChillSweep after a scan: 35.8 GB found, split into Safe to clear, Leftovers and Your call](docs/screenshot.png)
 
 Most cleaners work from a fixed list of junk locations. ChillSweep checks your user folders against what is actually installed: the registry's installed programs and publishers, Start menu and desktop shortcuts, running programs, program files, Store apps and Steam libraries. That lets it spot things like:
 

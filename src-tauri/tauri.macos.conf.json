@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "Developer ID Application: Wesley Scott (4T5WM695NP)",
+      "infoPlist": "Info.plist"
+    },
+    "category": "public.app-category.utilities"
+  }
+}

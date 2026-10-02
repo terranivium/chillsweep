@@ -45,11 +45,32 @@ if (release) {
     process.exit(1);
   }
   config.bundle = { createUpdaterArtifacts: true };
+
+  // macOS releases are signed and notarized, and there is no unsigned fallback: Gatekeeper
+  // simply refuses an unnotarized download. Missing credentials would otherwise surface as a
+  // confusing bundler failure half an hour into a build.
+  //
+  // The signing certificate is NOT here — it comes from the login keychain, named by
+  // bundle.macOS.signingIdentity. These three are only for submitting to Apple's notary service.
+  if (process.platform === "darwin") {
+    const missing = ["APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID"].filter((k) => !process.env[k]);
+    if (missing.length) {
+      console.error(`pack: ${missing.join(", ")} not set (release.env or the environment) — see RELEASING.md.`);
+      process.exit(1);
+    }
+  }
 }
 
 console.log(`pack: building ChillSweep ${config.version}${release ? " (release, signed for the updater)" : ""}`);
 const cli = join(root, "node_modules", "@tauri-apps", "cli", "tauri.js");
-const result = spawnSync(process.execPath, [cli, "build", "--config", JSON.stringify(config)], {
+// One universal binary covers Intel and Apple Silicon, so there is a single DMG to download and
+// a single updater artifact to sign. Note this moves the output under
+// target/universal-apple-darwin/, which publish.mjs accounts for.
+const args = ["build", "--config", JSON.stringify(config)];
+if (process.platform === "darwin") {
+  args.push("--target", "universal-apple-darwin");
+}
+const result = spawnSync(process.execPath, [cli, ...args], {
   stdio: "inherit",
   cwd: root,
 });

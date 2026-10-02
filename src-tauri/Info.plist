@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Merged into the bundle's Info.plist by bundle.macOS.infoPlist in tauri.macos.conf.json.
+
+  These strings ARE the text macOS shows in its permission dialogs, so they are written for the
+  person reading them at that moment, not for a developer. Each one answers "why does a cleanup
+  app want this?" and says plainly that a scan only reads. Without them macOS 13+ shows a bare
+  generic prompt, which is a worse thing to be asked by an app that deletes files.
+
+  There is deliberately no Full Disk Access request anywhere: everything ChillSweep legitimately
+  cleans is reachable without it, and not asking is part of the point.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>ChillSweep looks for clutter left on your Desktop. It only reads — nothing is removed until you pick it and confirm.</string>
+
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>ChillSweep looks for project folders and leftovers in your Documents. It only reads, and it never offers your own documents — just the parts apps rebuild by themselves.</string>
+
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>ChillSweep looks for big, old installers and downloads you may not need any more. It only reads — nothing is removed until you pick it and confirm.</string>
+
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>ChillSweep skips external drives, and only needs this if a folder it scans happens to live on one.</string>
+  </dict>
+</plist>

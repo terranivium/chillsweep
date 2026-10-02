@@ -16,7 +16,10 @@ accepted = [
   "MIT-0",
   "BSL-1.0",
 ]
-targets = ["x86_64-pc-windows-msvc"]
+# The notices file ships in both bundles, so it has to be the union of both platforms'
+# dependency closures: macOS pulls in plist and the objc2 crates, Windows pulls in winreg and
+# windows-sys. One machine can generate all three.
+targets = ["x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin"]
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
 private = { ignore = true }

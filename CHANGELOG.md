@@ -19,22 +19,31 @@ the commit that renamed a heading would itself bump the count and make that head
 
 ## Unreleased
 
-- **ChillSweep now runs on macOS.** Signed and notarized, so it opens without warnings. It reads your
-  app bundles and installer receipts to work out what's actually installed, and knows where macOS keeps
-  app data, caches, logs and reopened-window state.
-- Finds a lot more on macOS: Xcode build data and simulator devices, the Adobe media cache that Premiere
-  and After Effects fill up, Homebrew and language-tool caches, and per-app caches in your Library.
-- Removal goes to the Trash. macOS gives no way to put things back from inside an app, so instead of an
-  Undo button you get **Show in Trash**, and Finder puts them back.
-- The app now says Trash, Finder and apps on macOS, rather than Recycle Bin, Explorer and Program Files.
-- macOS asks before ChillSweep reads your Desktop, Documents or Downloads. If you say no, the scan says
-  which folder it couldn't check instead of quietly reporting nothing. ChillSweep never asks for Full
-  Disk Access.
-
-- ChillSweep now recognises project folders from creative tools and game engines — Pro Tools, REAPER, Ableton, Cubase, Studio One, Bitwig, Logic, Premiere, DaVinci Resolve, Unity, Unreal, Godot, Blender and LaTeX — by the project file inside them. They're no longer mistaken for leftovers. Everything ChillSweep finds about them goes in a new **Projects** section below the usual three, kept out of the main total: the parts each tool rebuilds by itself (waveform and peak caches, preview and proxy media, session backups, engine import caches), projects that were created and never used, and projects nothing has opened in over a year. Each one still says whether it's safe to clear or your call. Nothing that still holds recorded or imported media is ever called unused.
-- Added a lot more known caches, including the Adobe media cache that Premiere and After Effects fill up, After Effects' disk cache, Xcode simulator devices, Android emulator images, Unreal and Unity shared caches, Microsoft Teams, and the caches kept by pnpm, bun, Cypress, Puppeteer, Poetry, uv, conda, Go, Maven and Flutter.
-- Fixed items found in Documents being listed but never actually removable. ChillSweep reported them and then silently skipped them.
-- Unity and Unreal build folders inside a git project are now correctly described as caches the engine rebuilds, instead of being called local files that can't be recreated.
+- **ChillSweep now runs on macOS.** Signed and notarized, so it opens without warnings. It works out
+  what's installed from your app bundles and installer receipts, and knows where macOS keeps app data,
+  caches, logs and reopened-window state.
+- Removal goes to the Trash. macOS gives no way to put things back from inside an app, so instead of
+  an Undo button you get **Show in Trash**, and Finder puts them back.
+- The app says Trash, Finder and apps on macOS, rather than Recycle Bin, Explorer and Program Files.
+- macOS asks before ChillSweep reads your Desktop, Documents or Downloads. If you say no, the scan
+  tells you which folder it couldn't check instead of quietly reporting nothing. ChillSweep never asks
+  for Full Disk Access.
+- **New Projects section.** ChillSweep now recognises project folders from creative tools and game
+  engines — Pro Tools, REAPER, Ableton, Cubase, Studio One, Bitwig, Logic, Premiere, DaVinci Resolve,
+  Unity, Unreal, Godot, Blender and LaTeX — by the project file inside them, so they're no longer
+  mistaken for leftovers. What it finds about them sits in its own section below the usual three and
+  stays out of the main total: the parts each tool rebuilds by itself (waveform and peak caches,
+  preview and proxy media, session backups, engine import caches), projects that were created and
+  never used, and projects nothing has opened in over a year. Each still says whether it's safe to
+  clear or your call, and nothing still holding recorded or imported media is ever called unused.
+- Added a lot more known caches on both platforms: the Adobe media cache that Premiere and After
+  Effects fill up, After Effects' disk cache, Xcode build data and simulator devices, Android emulator
+  images, Unreal and Unity shared caches, Microsoft Teams, Homebrew, and the caches kept by pnpm, bun,
+  Cypress, Puppeteer, Poetry, uv, conda, Go, Maven and Flutter.
+- Fixed items found in Documents being listed but never actually removable. ChillSweep reported them
+  and then silently skipped them.
+- Fixed empty folders going unreported whenever one of them was somewhere ChillSweep refuses to touch.
+- Fixed Electron's caches being counted twice in the "safe to clear" total.
 
 ## 1.10.0 — 2026-09-30
 

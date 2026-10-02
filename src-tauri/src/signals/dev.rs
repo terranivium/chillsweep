@@ -81,7 +81,9 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
                     "Can't be recreated from the repo. Check it isn't data you need (downloaded models, databases, settings).".to_string(),
                 )
             };
-            let mut f = finding(format!("dev:{}", fsutil::lower(dir)), format!("{repo_name}{}{name}", std::path::MAIN_SEPARATOR), tier, Category::Dev, Confidence::High);
+            // A project's own part belongs with the other project findings, whether or not it is under git.
+            let category = if as_project.is_some() { Category::Projects } else { Category::Dev };
+            let mut f = finding(format!("dev:{}", fsutil::lower(dir)), format!("{repo_name}{}{name}", std::path::MAIN_SEPARATOR), tier, category, Confidence::High);
             f.what = Some(what);
             f.if_deleted = Some(if_deleted);
             f.evidence.push(format!("The {repo_name} repo's .gitignore excludes it, so it isn't part of the project's source."));

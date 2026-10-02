@@ -78,7 +78,9 @@ function renderSummary(report) {
   summary.hidden = false;
 }
 
-function renderFinding(f) {
+/// Project findings sit outside the tiers, so each says which tier it would be in instead of
+/// repeating "Projects".
+function renderFinding(f, { inProjects = false } = {}) {
   const node = $("#finding-template").content.firstElementChild.cloneNode(true);
   node.dataset.id = f.id;
   node.querySelector(".title").textContent = f.title;
@@ -93,7 +95,8 @@ function renderFinding(f) {
   });
 
   const chips = node.querySelector(".chips");
-  chips.append(el("span", "chip", CATEGORY_LABELS[f.category] ?? f.category));
+  if (inProjects) chips.append(el("span", `chip tier-chip tier-${f.tier}`, TIERS[f.tier].label));
+  else chips.append(el("span", "chip", CATEGORY_LABELS[f.category] ?? f.category));
   if (f.confidence !== "high") chips.append(el("span", `chip conf-${f.confidence}`, `${f.confidence} confidence`));
 
   const what = node.querySelector(".what");
@@ -128,7 +131,7 @@ function renderResults(report) {
   for (const total of report.totals) {
     if (total.count === 0) continue;
     const tier = TIERS[total.tier];
-    const tierFindings = report.findings.filter((f) => f.tier === total.tier);
+    const tierFindings = report.findings.filter((f) => f.tier === total.tier && f.category !== "projects");
     const section = el("section", `tier tier-${total.tier}`);
     section.id = `tier-${total.tier}`;
 
@@ -150,6 +153,30 @@ function renderResults(report) {
     section.append(list);
     results.append(section);
   }
+  renderProjects(report, results);
+}
+
+/// Project findings in their own section, collapsed and left out of the headline total.
+///
+/// They matter only to people who use those tools, and the tiers above are the general clean-up.
+/// No Select all here: this section can hold whole projects, which should each be a deliberate pick.
+function renderProjects(report, results) {
+  if (!report.projects || report.projects.count === 0) return;
+  const projectFindings = report.findings.filter((f) => f.category === "projects").sort((a, b) => b.bytes - a.bytes);
+  const section = el("details", "projects");
+  section.id = "projects";
+  const head = el("summary", "tier-head");
+  head.append(
+    el("i", "chev ph ph-caret-right"),
+    el("i", "tier-icon ph ph-folder-open"),
+    el("h2", null, "Projects"),
+    el("span", "tier-total", formatSize(report.projects.bytes)),
+  );
+  section.append(head, el("p", "tier-blurb", "Caches and old work from creative tools and game engines, found by their project files."));
+  const list = el("div", "findings");
+  for (const f of projectFindings) list.append(renderFinding(f, { inProjects: true }));
+  section.append(list);
+  results.append(section);
 }
 
 function renderFooter(report) {

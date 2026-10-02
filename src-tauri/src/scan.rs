@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use crate::fsutil;
 use crate::inventory::Inventory;
-use crate::report::{Finding, Report, Tier, TierTotal};
+use crate::report::{Category, Finding, Report, SectionTotal, Tier, TierTotal};
 use crate::roots::Roots;
 use crate::rules::Rules;
 use crate::signals;
@@ -138,13 +138,7 @@ pub fn run() -> Report {
     drop_nested(&mut findings);
     findings.sort_by(|a, b| a.tier.cmp(&b.tier).then(b.bytes.cmp(&a.bytes)));
 
-    let totals = [Tier::Safe, Tier::Leftover, Tier::YourCall]
-        .into_iter()
-        .map(|tier| {
-            let of_tier = findings.iter().filter(|f| f.tier == tier);
-            TierTotal { tier, bytes: of_tier.clone().map(|f| f.bytes).sum(), count: of_tier.count() }
-        })
-        .collect();
+    let (totals, projects) = totals(&findings);
 
     let mut warnings = Vec::new();
     // Say so when the OS is holding a door shut, rather than reporting nothing and letting the
@@ -164,7 +158,21 @@ pub fn run() -> Report {
             "{folders} skipped because something changed them in the last 24 hours, so a program may still be using them. Scan again tomorrow."
         ));
     }
-    Report { findings, totals, inventory: ctx.inv.summary.clone(), duration_ms: started.elapsed().as_millis(), warnings }
+    Report { findings, totals, projects, inventory: ctx.inv.summary.clone(), duration_ms: started.elapsed().as_millis(), warnings }
+}
+
+/// Per-tier totals for the general clean-up, and the project findings' total kept apart from them.
+fn totals(findings: &[Finding]) -> (Vec<TierTotal>, SectionTotal) {
+    let general = || findings.iter().filter(|f| f.category != Category::Projects);
+    let tiers = [Tier::Safe, Tier::Leftover, Tier::YourCall]
+        .into_iter()
+        .map(|tier| {
+            let of_tier = general().filter(|f| f.tier == tier);
+            TierTotal { tier, bytes: of_tier.clone().map(|f| f.bytes).sum(), count: of_tier.count() }
+        })
+        .collect();
+    let projects = findings.iter().filter(|f| f.category == Category::Projects);
+    (tiers, SectionTotal { bytes: projects.clone().map(|f| f.bytes).sum(), count: projects.count() })
 }
 
 /// If one finding's item sits inside another finding's item, keep only the outer one so
@@ -197,6 +205,26 @@ mod tests {
 
     fn ctx() -> Ctx {
         Ctx::new(Roots::detect(), Rules::load(), Inventory::default())
+    }
+
+    /// Project findings get their own section, so they must not swell the tier totals.
+    #[test]
+    fn projects_are_totalled_apart_from_the_tiers() {
+        let make = |tier, category, bytes| {
+            let mut f = signals::finding("x", "x", tier, category, crate::report::Confidence::High);
+            f.bytes = bytes;
+            f
+        };
+        let findings = [
+            make(Tier::Safe, Category::Cache, 10),
+            make(Tier::Safe, Category::Projects, 100),
+            make(Tier::YourCall, Category::Projects, 1000),
+        ];
+        let (tiers, projects) = totals(&findings);
+        let safe = tiers.iter().find(|t| t.tier == Tier::Safe).unwrap();
+        assert_eq!((safe.bytes, safe.count), (10, 1));
+        assert_eq!(tiers.iter().find(|t| t.tier == Tier::YourCall).unwrap().count, 0);
+        assert_eq!((projects.bytes, projects.count), (1100, 2));
     }
 
     /// `run`'s backstop drops findings that removal would refuse. That is right for a vague

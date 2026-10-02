@@ -334,6 +334,7 @@ mod tests {
                 last_modified: None,
             }],
             totals: vec![],
+            projects: Default::default(),
             inventory: InventorySummary::default(),
             duration_ms: 0,
             warnings: vec![],
@@ -354,7 +355,7 @@ mod tests {
 
     #[test]
     fn rejects_ids_not_in_report() {
-        let report = Report { findings: vec![], totals: vec![], inventory: InventorySummary::default(), duration_ms: 0, warnings: vec![] };
+        let report = Report { findings: vec![], totals: vec![], projects: Default::default(), inventory: InventorySummary::default(), duration_ms: 0, warnings: vec![] };
         let r = clean(&report, &["nope".into()], true, &ctx());
         assert_eq!(r.skipped, 1);
         assert_eq!(r.outcomes[0].method, Method::Skipped);
@@ -427,7 +428,7 @@ mod tests {
     #[test]
     fn writes_history() {
         let tmp = tempfile::tempdir().unwrap();
-        let report = Report { findings: vec![], totals: vec![], inventory: InventorySummary::default(), duration_ms: 0, warnings: vec![] };
+        let report = Report { findings: vec![], totals: vec![], projects: Default::default(), inventory: InventorySummary::default(), duration_ms: 0, warnings: vec![] };
         let r = clean(&report, &["x".into()], false, &ctx());
         append_history(tmp.path(), &r).unwrap();
         let text = fs::read_to_string(tmp.path().join("history.jsonl")).unwrap();

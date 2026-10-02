@@ -388,6 +388,34 @@ main {
   color: var(--muted);
 }
 
+/* Project findings: their own collapsed section below the tiers. */
+.projects {
+  --tier: var(--accent);
+  margin-bottom: 28px;
+  scroll-margin-top: 90px;
+}
+
+.projects > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.projects > summary::-webkit-details-marker {
+  display: none;
+}
+
+.projects > summary .chev {
+  transition: transform 0.15s;
+}
+
+.projects[open] > summary .chev {
+  transform: rotate(90deg);
+}
+
+.chip.tier-chip {
+  color: var(--tier);
+}
+
 .findings {
   border: 1px solid var(--border);
   border-radius: var(--radius);

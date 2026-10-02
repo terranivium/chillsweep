@@ -1,7 +1,7 @@
 //! Command-line scan for development: `cargo run --example scan` prints a readable report, `-- --json`
 //! the raw report. An example rather than a [[bin]] so the installer doesn't ship it.
 
-use chillsweep_lib::report::Tier;
+use chillsweep_lib::report::{Category, Finding, Tier};
 use chillsweep_lib::scan;
 
 fn size(bytes: u64) -> String {
@@ -54,21 +54,32 @@ fn main() {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
         return;
     }
+    let label = |tier| match tier {
+        Tier::Safe => "SAFE TO CLEAR",
+        Tier::Leftover => "LEFTOVERS",
+        Tier::YourCall => "YOUR CALL",
+    };
+    let print = |f: &Finding, tag: &str| {
+        println!("{:>10}  {}  [{:?}]{tag}", size(f.bytes), f.title, f.confidence);
+        for it in &f.items {
+            println!("            {}", it.path);
+        }
+        for e in &f.evidence {
+            println!("            - {e}");
+        }
+    };
+    let is_project = |f: &&Finding| f.category == Category::Projects;
     for total in &report.totals {
-        let label = match total.tier {
-            Tier::Safe => "SAFE TO CLEAR",
-            Tier::Leftover => "LEFTOVERS",
-            Tier::YourCall => "YOUR CALL",
-        };
-        println!("\n=== {label}: {} in {} findings", size(total.bytes), total.count);
-        for f in report.findings.iter().filter(|f| f.tier == total.tier) {
-            println!("{:>10}  {}  [{:?}]", size(f.bytes), f.title, f.confidence);
-            for it in &f.items {
-                println!("            {}", it.path);
-            }
-            for e in &f.evidence {
-                println!("            - {e}");
-            }
+        println!("\n=== {}: {} in {} findings", label(total.tier), size(total.bytes), total.count);
+        for f in report.findings.iter().filter(|f| f.tier == total.tier && !is_project(f)) {
+            print(f, "");
+        }
+    }
+    // Kept apart from the tiers, as the app does; each still says which tier it would be.
+    if report.projects.count > 0 {
+        println!("\n=== PROJECTS: {} in {} findings", size(report.projects.bytes), report.projects.count);
+        for f in report.findings.iter().filter(is_project) {
+            print(f, &format!("  ({})", label(f.tier).to_lowercase()));
         }
     }
     // The sentence comes from the report, so this and the app can't drift apart or disagree

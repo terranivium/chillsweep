@@ -72,6 +72,13 @@ impl Finding {
     }
 }
 
+/// Size and count of the findings kept apart from the tiers. See `Report::projects`.
+#[derive(Debug, Clone, Copy, Serialize, Default)]
+pub struct SectionTotal {
+    pub bytes: u64,
+    pub count: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TierTotal {
     pub tier: Tier,
@@ -123,7 +130,11 @@ impl InventorySummary {
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub findings: Vec<Finding>,
+    /// General clean-up only: project findings are left out of these.
     pub totals: Vec<TierTotal>,
+    /// Project findings, which the page shows in their own section. They are specific to people who
+    /// use those tools, so they stay out of the tier totals and the headline figure.
+    pub projects: SectionTotal,
     pub inventory: InventorySummary,
     pub duration_ms: u128,
     pub warnings: Vec<String>,

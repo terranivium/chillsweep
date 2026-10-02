@@ -324,8 +324,10 @@ mod tests {
             for rule in &r.rule {
                 for p in &rule.paths {
                     let key = p.to_lowercase().replace('\\', "/");
+                    // Any repeat double-counts, including a rule listing the same path twice:
+                    // `known.rs` pushes one item per resolved path and never dedupes them.
                     if let Some(other) = seen.insert(key, &rule.id) {
-                        assert_eq!(other, rule.id, "{name}: {p} is claimed by both {other} and {}", rule.id);
+                        panic!("{name}: {p} is claimed by both {other} and {}", rule.id);
                     }
                 }
             }

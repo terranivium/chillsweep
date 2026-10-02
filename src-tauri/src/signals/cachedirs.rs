@@ -12,8 +12,17 @@ use crate::scan::Ctx;
 const MIN_BYTES: u64 = 20 << 20;
 
 pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
-    let apps: Vec<PathBuf> = [&ctx.roots.local, &ctx.roots.roaming]
-        .into_iter()
+    let mut out = nested_caches(ctx, taken);
+    out.extend(whole_cache_dirs(ctx, taken));
+    out
+}
+
+/// Cache folders *inside* an app's data folder: `Discord/Cache`, `Foo/User Data/Code Cache`.
+fn nested_caches(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
+    let apps: Vec<PathBuf> = ctx
+        .roots
+        .app_data_roots()
+        .iter()
         .flat_map(|r| fsutil::child_dirs(r))
         .filter(|d| !ctx.rules.is_system_name(&fsutil::file_name(d)) && !ctx.is_protected(d) && !taken.covers(d))
         .collect();
@@ -51,6 +60,51 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             f.evidence.push(format!("Folders named like caches: {}.", names.join(", ")));
             f.evidence.push(last_changed(ctx, newest));
             f.last_modified = Some(newest);
+            Some(f)
+        })
+        .collect()
+}
+
+/// On macOS a direct child of `~/Library/Caches` *is itself* the cache — `~/Library/Caches/
+/// com.spotify.client` is Spotify's, whole and entire, with no `Cache` subfolder to look for.
+/// That has no Windows analogue, where `%LOCALAPPDATA%\Spotify` mixes cache in with settings.
+///
+/// This only reports caches whose owner **is** installed. An unowned one is a leftover, and the
+/// orphan signal says something truer about it.
+fn whole_cache_dirs(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    fsutil::child_dirs(&ctx.roots.cache)
+        .par_iter()
+        .filter_map(|dir| {
+            let name = fsutil::file_name(dir);
+            if ctx.rules.is_system_name(&name) || ctx.is_protected(dir) || taken.covers(dir) || ctx.is_owned(dir) {
+                return None;
+            }
+            // The owner has to be here *now*. An installer receipt would prove only that
+            // something was once installed, which would have this claiming a long-gone app's
+            // leftovers were its live cache. The orphan signal handles those, and truthfully.
+            let owner = ctx.inv.present_owner_of(&name)?;
+            let owner_name = owner.display.clone();
+            let u = fsutil::usage(dir);
+            if u.bytes < MIN_BYTES {
+                return None;
+            }
+            let mut f = finding(
+                format!("cache-dir:{}", fsutil::lower(dir)),
+                format!("{owner_name} cache"),
+                Tier::Safe,
+                Category::Cache,
+                Confidence::High,
+            );
+            f.what = Some(format!("Everything {owner_name} has cached. The whole folder is cache — macOS keeps it separate from settings."));
+            f.if_deleted = Some(format!("Rebuilt as {owner_name} runs. Settings and logins are kept elsewhere and are not affected."));
+            f.evidence.push(format!("It sits in your Caches folder and belongs to {owner_name}, which is installed."));
+            f.evidence.push(last_changed(ctx, u.newest));
+            f.last_modified = Some(u.newest);
+            f.items.push(item(dir, &u));
+            f.recompute_bytes();
             Some(f)
         })
         .collect()

@@ -39,7 +39,7 @@ async fn clean(state: State<'_, AppState>, finding_ids: Vec<String>, permanent_s
     let result = tauri::async_runtime::spawn_blocking(move || {
         let ctx = clean::guard_ctx();
         let result = clean::clean(&report, &finding_ids, permanent_safe, &ctx);
-        let _ = clean::append_history(&ctx.roots.local.join("ChillSweep"), &result);
+        let _ = clean::append_history(&ctx.roots.app_data_dir(), &result);
         result
     })
     .await
@@ -61,6 +61,13 @@ struct AppInfo {
     git_hash: &'static str,
     /// Unix seconds.
     build_time: u64,
+    /// `"windows"` or `"macos"`. The page uses it to pick wording, so it never has to guess
+    /// from the user agent.
+    platform: &'static str,
+    /// What this OS calls the place deleted things go: "Recycle Bin" or "Trash".
+    bin_name: &'static str,
+    /// What this OS calls its file manager: "Explorer" or "Finder".
+    file_manager: &'static str,
 }
 
 /// Version and build details for the About screen.
@@ -71,6 +78,9 @@ fn app_info(app: AppHandle) -> AppInfo {
         version: app.package_info().version.to_string(),
         git_hash: env!("CHILLSWEEP_GIT_HASH"),
         build_time: env!("CHILLSWEEP_BUILD_TIME").parse().unwrap_or(0),
+        platform: if cfg!(windows) { "windows" } else { "macos" },
+        bin_name: clean::BIN_NAME,
+        file_manager: if cfg!(windows) { "Explorer" } else { "Finder" },
     }
 }
 

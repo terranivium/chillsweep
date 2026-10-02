@@ -12,15 +12,23 @@ use crate::scan::Ctx;
 
 /// Folder names that just group versions; the title uses the parent's name instead.
 const GROUPING_NAMES: [&str; 6] = ["versions", "bin", "app", "current", "releases", "share"];
+
+/// Program files renamed during a self-update (`claude.exe.old.123`, `Foo.app.old`), as opposed
+/// to a database's rotated logs (`LOG.old`). The extension list is what makes it a *program*
+/// file rather than any old backup, so it differs per platform.
+#[cfg(windows)]
+const OLD_FILE_RE: &str = r"(?i)\.(?:exe|dll|msi|asar|zip)\.old(?:\.\d+)?$";
+#[cfg(not(windows))]
+const OLD_FILE_RE: &str = r"(?i)\.(?:app|dylib|framework|so|asar|zip|pkg)\.old(?:\.\d+)?$";
 const MIN_BYTES: u64 = 10 << 20;
 
 pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     let version_re = Regex::new(r"^(?:app-|v)?(\d+(?:\.\d+){1,3})$").unwrap();
     // Program files renamed during a self-update (`claude.exe.old.123`), not databases'
     // rotated logs (`LOG.old`).
-    let old_re = Regex::new(r"(?i)\.(?:exe|dll|msi|asar|zip)\.old(?:\.\d+)?$").unwrap();
+    let old_re = Regex::new(OLD_FILE_RE).unwrap();
     let mut out = Vec::new();
-    for (root, depth) in [(ctx.roots.home.join(".local"), 4), (ctx.roots.local.clone(), 3), (ctx.roots.roaming.clone(), 3)] {
+    for (root, depth) in ctx.roots.version_roots() {
         fsutil::walk_dirs(&root, depth, |dir, d| {
             if d == 1 && (ctx.rules.is_system_name(&fsutil::file_name(dir)) || ctx.is_protected(dir)) {
                 return false;
@@ -117,11 +125,15 @@ fn app_name(dir: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::app_name;
-    use std::path::Path;
+
+    /// `app_name` walks up parent folders, so the test only needs a real path shape.
+    fn at(parts: &[&str]) -> std::path::PathBuf {
+        parts.iter().fold(std::path::PathBuf::from(std::path::MAIN_SEPARATOR_STR), |acc, p| acc.join(p))
+    }
 
     #[test]
     fn app_names_skip_grouping_folders() {
-        assert_eq!(app_name(Path::new(r"C:\Users\x\.local\share\claude\versions")), "claude");
-        assert_eq!(app_name(Path::new(r"C:\Users\x\AppData\Local\Discord")), "Discord");
+        assert_eq!(app_name(&at(&["home", "x", ".local", "share", "claude", "versions"])), "claude");
+        assert_eq!(app_name(&at(&["home", "x", "AppData", "Local", "Discord"])), "Discord");
     }
 }

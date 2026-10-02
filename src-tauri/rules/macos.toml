@@ -1,0 +1,962 @@
+# ChillSweep knowledge base — macOS.
+#
+# Detection must work without any [[rule]] entry: the general signals in src/signals/ find
+# leftovers, caches and clutter on their own. Rules only add better wording, catch a few
+# locations the signals can't reason about, and (most importantly) protect things.
+#
+# Path variables: %USERPROFILE% %CONFIG% %CACHE% %LIBRARY% %PREFERENCES% %LOGS% %SAVEDSTATE%
+#                 %CONTAINERS% %TEMP% %SHARED% %STEAM%
+#   %CONFIG% is ~/Library/Application Support, %CACHE% is ~/Library/Caches, %SHARED% is /Library.
+# A `*` inside a path segment is a wildcard (e.g. '%CACHE%/*-updater').
+# Paths use `/`. Strings use single quotes to match the Windows file.
+
+# Never flagged by the general signals (unknown owner, empty folders, old versions, cache
+# folders), and anything that *contains* one of these is never flagged either. The targeted
+# signals (Downloads, game saves, git repos) and explicit [[rule]] entries still look inside.
+protected = [
+  '%CONFIG%/com.chillsweep.app',       # ChillSweep's own WebView data
+  '%CONFIG%/ChillSweep',               # ChillSweep's clean-up history
+  '%CACHE%/com.chillsweep.app',
+
+  # Sandboxed app data. Every one of these is a live app's home, and the `Data` folder inside
+  # is a symlink farm: Data/Desktop, Data/Documents and friends point at the real thing, so
+  # anything that walked in would both mis-measure and risk the user's own files.
+  '%CONTAINERS%',
+  '%LIBRARY%/Group Containers',
+  '%LIBRARY%/Daemon Containers',
+  '%LIBRARY%/ContainerManager',
+  '%LIBRARY%/Application Scripts',
+
+  # Credentials and keys.
+  '%LIBRARY%/Keychains',
+  '%USERPROFILE%/.ssh',
+  '%USERPROFILE%/.gnupg',
+  '%USERPROFILE%/.aws',
+  '%USERPROFILE%/.kube',
+  '%USERPROFILE%/.docker/config.json',
+  '%CONFIG%/1Password',
+  '%CONFIG%/Bitwarden',
+  '%CONFIG%/KeePassXC',
+
+  # Cloud sync. Deleting here propagates to every other device.
+  '%LIBRARY%/Mobile Documents',
+  '%LIBRARY%/CloudStorage',
+
+  # Mail, messages and personal records. Also TCC-gated, so we could not read them anyway.
+  '%LIBRARY%/Mail',
+  '%LIBRARY%/Messages',
+  '%LIBRARY%/Calendars',
+  '%LIBRARY%/Reminders',
+  '%LIBRARY%/Safari',
+  '%LIBRARY%/Cookies',
+  '%LIBRARY%/IdentityServices',
+  '%LIBRARY%/HomeKit',
+  '%LIBRARY%/Suggestions',
+  '%LIBRARY%/Accounts',
+  '%LIBRARY%/Autosave Information',
+  '%CONFIG%/AddressBook',
+  '%CONFIG%/com.apple.TCC',
+  '%CONFIG%/MobileSync',
+
+  # The user's own documents.
+  '%USERPROFILE%/Desktop',
+  '%USERPROFILE%/Documents',
+  '%USERPROFILE%/Downloads',
+  '%USERPROFILE%/Movies',
+  '%USERPROFILE%/Music',
+  '%USERPROFILE%/Pictures',
+  '%USERPROFILE%/Public',
+  '%USERPROFILE%/Applications',
+
+  # Licensed installs with no owner of their own. A plug-in whose host app is gone is still a
+  # paid install, and re-downloading it may not be possible.
+  '%LIBRARY%/Audio',
+  '%LIBRARY%/Fonts',
+  '%LIBRARY%/ColorPickers',
+  '%LIBRARY%/Input Methods',
+  '%LIBRARY%/Internet Plug-Ins',
+  '%LIBRARY%/PreferencePanes',
+  '%LIBRARY%/QuickLook',
+  '%LIBRARY%/Screen Savers',
+  '%LIBRARY%/Services',
+  '%LIBRARY%/Spelling',
+  '%LIBRARY%/Keyboard Layouts',
+  '%LIBRARY%/Dictionaries',
+  '%LIBRARY%/Developer/Xcode/Templates',
+  '%LIBRARY%/Developer/Xcode/UserData',
+
+  # Browser profiles: history, logins, bookmarks.
+  '%CONFIG%/Google/Chrome',
+  '%CONFIG%/Firefox/Profiles',
+  '%CONFIG%/BraveSoftware',
+  '%CONFIG%/Microsoft Edge',
+  '%CONFIG%/Vivaldi',
+  '%CONFIG%/Arc',
+
+  # Dev toolchains where the folder *is* the install, not a cache of it.
+  '%USERPROFILE%/.rustup',
+  '%USERPROFILE%/.cargo/bin',
+  '%USERPROFILE%/.claude',
+  '%USERPROFILE%/.ollama/models',
+  '%USERPROFILE%/.nvm',
+  '%USERPROFILE%/.pyenv',
+  '%USERPROFILE%/.rbenv',
+  '%USERPROFILE%/.sdkman',
+]
+
+# Off limits for good: refused at removal time no matter which signal found it or how certain it
+# was. `protected` above is a filter a signal with real proof may look past; this is the floor
+# underneath it, and nothing passes.
+never_touch = [
+  '%CONFIG%/com.chillsweep.app',
+  '%CONFIG%/ChillSweep',
+  '%CACHE%/com.chillsweep.app',
+  '%LIBRARY%/Keychains',
+  '%USERPROFILE%/.ssh',
+  '%USERPROFILE%/.gnupg',
+  '%USERPROFILE%/.aws',
+  '%LIBRARY%/Mobile Documents',
+  '%LIBRARY%/CloudStorage',
+  '%CONTAINERS%',
+  '%LIBRARY%/Group Containers',
+  '%CONFIG%/1Password',
+  '%CONFIG%/Bitwarden',
+  '%CONFIG%/KeePassXC',
+  '%CONFIG%/MobileSync',
+]
+
+# Top-level ~/Library folders that belong to macOS itself. Never judged as leftovers.
+system_names = [
+  'Accounts', 'AppleMediaServices', 'Application Scripts', 'Assistant', 'Assistants',
+  'Autosave Information', 'Biome', 'CallServices', 'ColorSync', 'Containers',
+  'ContainerManager', 'CoreFollowUp', 'Cookies', 'DataDeliveryServices', 'DoNotDisturb',
+  'DuetExpertCenter', 'Favorites', 'FileProvider', 'Finance', 'FontCollections',
+  'FrontBoard', 'Group Containers', 'HomeKit', 'HTTPStorages', 'IdentityServices',
+  'IntelligencePlatform', 'KeyboardServices', 'Keychains', 'LanguageModeling',
+  'LaunchAgents', 'LockdownMode', 'Mail', 'Maps', 'Messages', 'Metadata',
+  'Mobile Documents', 'News', 'Passes', 'PersonalizationPortrait', 'PhotoLibraryStubs',
+  'Preferences', 'PreferencePanes', 'PrivateCloudCompute', 'Reminders', 'Safari',
+  'Sharing', 'Shortcuts', 'Siri', 'SiriSuggestions', 'Sounds', 'Spelling', 'Staging',
+  'StatusKit', 'Suggestions', 'Sync', 'SyncedPreferences', 'Trial', 'UIKit', 'Weather',
+  'WebKit', 'com.apple.internal.ck', 'studentd', 'CoreData', 'Caches', 'Logs',
+  'Saved Application State', 'Application Support', 'Developer',
+  # Apple components whose folder name carries no `com.apple.` prefix, so the bundle-id rule
+  # in `Rules::is_system_name` doesn't catch them.
+  'Animoji', 'PassKit', 'GameKit', 'CloudDocs', 'SyncServices', 'CallHistoryDB',
+  'CallHistoryTransactions', 'walletAvailabilityCheckTool', 'mbuseragent', 'auvaltool',
+  'AddressBook', 'Knowledge', 'Dock', 'Spotlight', 'iCloud', 'ScreenTime', 'FaceTime',
+  'AskPermission', 'CrashReporter', 'DiagnosticReports', 'coreduetd', 'icdd',
+  'Audio Units', 'AudioUnitCache', 'nsurlsessiond', 'nsurlstoraged',
+  # Shared dev tool caches that are not one app's data.
+  'npm', 'pip', 'Yarn', 'go-build', 'electron', 'electron-builder', 'Homebrew',
+  'CocoaPods', 'JetBrains', 'Steam', 'Unity', 'UnityHub',
+]
+
+# Home dotfolders that are shared containers, not one app's data.
+generic_names = ['.cache', '.config', '.local', '.nuget', '.cargo', '.gradle', '.m2', '.npm', '.yarn', '.bun']
+
+# Folders inside Steam's `common` directory that belong to Steam itself.
+steam_internal = ['Steam Controller Configs', 'Steamworks Shared', 'SteamVR']
+
+# Folder names that mean "cache" when found inside an app's data folder.
+cache_names = [
+  'Cache', 'Caches', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache',
+  'DawnWebGPUCache', 'GrShaderCache', 'ShaderCache', 'CachedData', 'Crashpad',
+  'CrashReports', 'logs', 'Logs', 'Service Worker/CacheStorage', 'updates', 'update-cache',
+  'pending_update', 'IndexedDB.tmp',
+]
+
+# Executable names too generic to identify an app.
+exe_stopwords = [
+  'helper', 'launcher', 'updater', 'update', 'install', 'installer', 'uninstall',
+  'crashpad_handler', 'crashreporter', 'ReportCrash', 'XPCService', 'plugin-container',
+  'node', 'python', 'python3', 'java', 'ruby', 'perl', 'sh', 'bash', 'zsh', 'ffmpeg',
+  'Electron', 'reporter', 'service', 'server', 'client', 'app', 'main', 'run', 'start',
+  'game', 'bin', 'cli', 'tool', 'tools', 'test', 'daemon', 'agent',
+]
+
+# git-ignored folders in a repo that are pure build output (rebuilt by the project's build).
+build_dirs = [
+  'Library', 'Temp', 'Logs', 'Intermediate', 'Saved', 'DerivedDataCache', 'Binaries', '.godot',
+  'dist', 'build', 'out', 'target', '.next', '.nuxt', '.svelte-kit', '.output', '.turbo',
+  '.parcel-cache', '.cache', 'coverage', '.pytest_cache', '__pycache__', '.mypy_cache',
+  '.ruff_cache', 'obj', 'bin', '.gradle', 'cmake-build-debug', 'cmake-build-release',
+  '.angular', '.vite', 'storybook-static', 'release', 'releases', '.build', '.swiftpm',
+  'DerivedData',
+]
+
+# git-ignored folders that are safe to remove but need a command to restore.
+[[restore_dir]]
+name = 'node_modules'
+how = 'Run `npm install` (or your package manager) to restore it.'
+[[restore_dir]]
+name = '.venv'
+how = 'Recreate the virtual environment and reinstall requirements.'
+[[restore_dir]]
+name = 'venv'
+how = 'Recreate the virtual environment and reinstall requirements.'
+[[restore_dir]]
+name = 'env'
+how = 'Recreate the virtual environment and reinstall requirements.'
+[[restore_dir]]
+name = 'vendor'
+how = 'Reinstall dependencies with your package manager.'
+[[restore_dir]]
+name = 'Pods'
+how = 'Run `pod install` to restore it.'
+[[restore_dir]]
+name = 'Carthage'
+how = 'Run `carthage bootstrap` to restore it.'
+
+# ---------------------------------------------------------------------------
+# Project folders.
+#
+# A creative tool or engine leaves a marker file beside its content. That marker is the only
+# thing that tells a Pro Tools session or a Unity project apart from any other folder — the
+# folder name says nothing — and it is also what earns these findings the right to be acted on
+# inside otherwise protected places like Documents.
+#
+# `markers` are file names, or `*` patterns, or a relative path written with `/`.
+# `regenerable` lists the parts the tool rebuilds by itself, each with its own tier.
+#
+# NEVER list a content folder as regenerable. `Audio Files`, `Media`, `Recorded`, `Assets`,
+# Cubase's `Audio` — these hold the work itself. Getting this wrong is the one way this feature
+# could destroy something irreplaceable, so when in doubt leave a folder out: an unlisted folder
+# is simply never offered.
+# ---------------------------------------------------------------------------
+
+# ── Game engines. By far the largest caches on any machine that has them. ──
+
+[[project_kind]]
+id = 'unity'
+name = 'Unity project'
+markers = ['ProjectSettings/ProjectVersion.txt', 'Assembly-CSharp.csproj']
+[[project_kind.regenerable]]
+name = 'Library'
+tier = 'safe'
+what = "Unity's import cache: every asset converted into the form the engine actually loads."
+if_deleted = 'Unity reimports the project the next time you open it. That can take a while on a big project, but nothing is lost.'
+[[project_kind.regenerable]]
+name = 'Temp'
+tier = 'safe'
+what = 'Scratch files from a Unity session.'
+if_deleted = 'Nothing. Only present while the editor is running, or left behind after a crash.'
+[[project_kind.regenerable]]
+name = 'Logs'
+tier = 'safe'
+what = 'Unity editor logs for this project.'
+if_deleted = 'Nothing, unless you are chasing a bug and need them.'
+[[project_kind.regenerable]]
+name = 'obj'
+tier = 'safe'
+what = 'Intermediate C# build output.'
+if_deleted = 'Rebuilt on the next script compile.'
+
+[[project_kind]]
+id = 'unreal'
+name = 'Unreal project'
+markers = ['*.uproject']
+[[project_kind.regenerable]]
+name = 'DerivedDataCache'
+tier = 'safe'
+what = 'Cooked shaders, textures and meshes Unreal derives from your source assets. Routinely the biggest folder on the disk.'
+if_deleted = 'Unreal rebuilds it as you open levels. The first load of each is slow, then it is back to normal.'
+[[project_kind.regenerable]]
+name = 'Intermediate'
+tier = 'safe'
+what = 'Build intermediates and generated code.'
+if_deleted = 'Recreated the next time the project builds.'
+[[project_kind.regenerable]]
+name = 'Binaries'
+tier = 'safe'
+what = 'Compiled modules for this project.'
+if_deleted = 'Recreated the next time the project builds. A source build is needed, so this is only safe if you can compile.'
+[[project_kind.regenerable]]
+name = 'Saved'
+tier = 'your_call'
+what = 'Autosaves, logs, crash dumps and local editor settings.'
+if_deleted = 'Autosaved copies of unsaved work go with it. Check for recent autosaves first.'
+
+[[project_kind]]
+id = 'godot'
+name = 'Godot project'
+markers = ['project.godot']
+[[project_kind.regenerable]]
+name = '.godot'
+tier = 'safe'
+what = "Godot's imported-asset cache for this project."
+if_deleted = 'Godot reimports the assets next time the project opens.'
+
+# ── Video. Preview and proxy media, which is derived from your footage. ──
+
+[[project_kind]]
+id = 'premiere'
+name = 'Premiere project'
+markers = ['*.prproj']
+[[project_kind.regenerable]]
+name = 'Adobe Premiere Pro Preview Files'
+tier = 'safe'
+what = 'Rendered timeline previews.'
+if_deleted = 'Premiere re-renders previews as you work. Your edit is untouched.'
+[[project_kind.regenerable]]
+name = 'Adobe Premiere Pro Audio Previews'
+tier = 'safe'
+what = 'Rendered audio previews.'
+if_deleted = 'Re-rendered as you work.'
+[[project_kind.regenerable]]
+name = 'Adobe Premiere Pro Auto-Save'
+tier = 'your_call'
+what = 'Automatic copies of the project file as it was at earlier points.'
+if_deleted = 'You lose the ability to step back to an earlier version of the edit.'
+
+[[project_kind]]
+id = 'resolve'
+name = 'DaVinci Resolve project'
+markers = ['*.drp']
+[[project_kind.regenerable]]
+name = 'CacheClip'
+tier = 'safe'
+what = 'Resolve’s render cache for clips and timelines.'
+if_deleted = 'Resolve re-caches as you play back. Only playback smoothness is affected.'
+[[project_kind.regenerable]]
+name = 'ProxyMedia'
+tier = 'safe'
+what = 'Low-resolution stand-ins Resolve generates for smooth editing.'
+if_deleted = 'Resolve falls back to the original media, and can regenerate proxies on request.'
+
+# ── 3D, documents and the long tail. ──
+
+[[project_kind]]
+id = 'blender'
+name = 'Blender project'
+markers = ['*.blend']
+[[project_kind.regenerable]]
+name = '*.blend1'
+tier = 'safe'
+what = 'The previous save of a Blender file, kept automatically.'
+if_deleted = 'You lose the ability to step back one save.'
+[[project_kind.regenerable]]
+name = '*.blend2'
+tier = 'safe'
+what = 'The save before last.'
+if_deleted = 'You lose the ability to step back two saves.'
+
+[[project_kind]]
+id = 'latex'
+name = 'LaTeX document'
+markers = ['*.tex']
+[[project_kind.regenerable]]
+name = '*.synctex.gz'
+tier = 'safe'
+what = 'The map between your source and the built PDF, used for click-to-source.'
+if_deleted = 'Rebuilt the next time you compile.'
+[[project_kind.regenerable]]
+name = '*.aux'
+tier = 'safe'
+what = 'Cross-reference and citation bookkeeping from the last build.'
+if_deleted = 'Rebuilt on the next compile. The first pass may show unresolved references until it runs twice.'
+[[project_kind.regenerable]]
+name = '*.fls'
+tier = 'safe'
+what = 'The list of files the last build touched.'
+if_deleted = 'Rebuilt on the next compile.'
+
+# ── Audio. Smallest of the groups, but the most numerous on an audio machine. ──
+
+[[project_kind]]
+id = 'protools'
+name = 'Pro Tools session'
+markers = ['*.ptx', '*.ptf']
+content = ['Audio Files']
+[[project_kind.regenerable]]
+name = 'WaveCache.wfm'
+tier = 'safe'
+what = "Pro Tools' cache of the waveform shapes it draws in the edit window."
+if_deleted = 'Pro Tools redraws the waveforms when it next opens the session.'
+[[project_kind.regenerable]]
+name = 'Session File Backups'
+tier = 'safe'
+what = 'Automatic copies of the session file as it was at earlier points.'
+if_deleted = 'You lose the ability to step back to an earlier version of the session. The session itself stays.'
+[[project_kind.regenerable]]
+name = 'Rendered Files'
+tier = 'safe'
+what = 'Temporary renders from Elastic Audio and AudioSuite processing.'
+if_deleted = 'Pro Tools re-renders them when the session opens.'
+[[project_kind.regenerable]]
+name = 'Fade Files'
+tier = 'safe'
+what = 'Pre-computed fades for the session.'
+if_deleted = 'Pro Tools recreates the fades when the session opens.'
+[[project_kind.regenerable]]
+name = 'Bounced Files'
+tier = 'your_call'
+what = 'Mixdowns bounced out of this session.'
+if_deleted = "Gone unless you bounce again — and these may be the finished deliverable you were asked for."
+[[project_kind.regenerable]]
+name = 'Video Files'
+tier = 'your_call'
+what = 'Video imported into the session to work against.'
+if_deleted = "The session loses its picture. Fine if you still have the video elsewhere, not if this is the only copy."
+
+[[project_kind]]
+id = 'reaper'
+name = 'REAPER project'
+markers = ['*.rpp']
+[[project_kind.regenerable]]
+name = '*.reapeaks'
+tier = 'safe'
+what = 'Peak files REAPER uses to draw waveforms.'
+if_deleted = 'REAPER rebuilds them, which takes a moment per file on next open.'
+[[project_kind.regenerable]]
+name = '*.rpp-bak'
+tier = 'safe'
+what = 'The previous save of the project file.'
+if_deleted = 'You lose the ability to step back one save.'
+[[project_kind.regenerable]]
+name = '*.rpp-PROX'
+tier = 'safe'
+what = 'Proxy project files REAPER writes while rendering.'
+if_deleted = 'Nothing. Left behind by an interrupted render.'
+
+[[project_kind]]
+id = 'ableton'
+name = 'Ableton Live set'
+markers = ['*.als']
+content = ['Samples']
+[[project_kind.regenerable]]
+name = '*.asd'
+tier = 'safe'
+what = 'Analysis files holding warp markers and waveform data for each sample.'
+if_deleted = 'Live re-analyses the samples on next load. Any warp markers you set by hand are lost.'
+[[project_kind.regenerable]]
+name = 'Backup'
+tier = 'safe'
+what = 'Automatic copies of the set as it was at earlier points.'
+if_deleted = 'You lose the ability to step back to an earlier version of the set.'
+
+[[project_kind]]
+id = 'cubase'
+name = 'Cubase project'
+markers = ['*.cpr', '*.npr']
+content = ['Audio']
+[[project_kind.regenerable]]
+name = 'Images'
+tier = 'safe'
+what = 'Waveform images Cubase draws from your audio.'
+if_deleted = 'Cubase redraws them when the project opens.'
+[[project_kind.regenerable]]
+name = 'Freeze'
+tier = 'safe'
+what = 'Rendered copies of frozen tracks.'
+if_deleted = 'Unfreeze and refreeze the tracks to recreate them.'
+
+[[project_kind]]
+id = 'studioone'
+name = 'Studio One song'
+markers = ['*.song']
+content = ['Media']
+[[project_kind.regenerable]]
+name = 'Cache'
+tier = 'safe'
+what = 'Rendered and cached audio for this song.'
+if_deleted = 'Studio One recreates it as the song plays back.'
+[[project_kind.regenerable]]
+name = 'Bounces'
+tier = 'your_call'
+what = 'Mixdowns bounced out of this song.'
+if_deleted = 'Gone unless you bounce again, and these may be the finished deliverable.'
+
+[[project_kind]]
+id = 'bitwig'
+name = 'Bitwig project'
+markers = ['*.bwproject']
+[[project_kind.regenerable]]
+name = 'cache'
+tier = 'safe'
+what = 'Cached audio and analysis for this project.'
+if_deleted = 'Bitwig rebuilds it on next open.'
+
+# Recognised so that nothing mistakes them for junk, but never looked inside: a `.logicx`,
+# `.band` or `.fcpbundle` is a package, which the scan treats as a single document by design.
+[[project_kind]]
+id = 'logic'
+name = 'Logic project'
+markers = ['*.logicx']
+
+[[project_kind]]
+id = 'finalcut'
+name = 'Final Cut library'
+markers = ['*.fcpbundle']
+
+# ---------------------------------------------------------------------------
+# Known caches (tier = safe). Contents are rebuilt automatically.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+id = 'xcode-derived-data'
+name = 'Xcode build data'
+paths = ['%LIBRARY%/Developer/Xcode/DerivedData']
+tier = 'safe'
+category = 'dev'
+what = 'Build output, indexes and module caches Xcode keeps per project. Often the single largest folder on a developer Mac.'
+if_deleted = 'Your next build of each project is slower while Xcode rebuilds and re-indexes. No source or settings are touched.'
+
+[[rule]]
+id = 'xcode-device-support'
+name = 'Xcode device support files'
+paths = ['%LIBRARY%/Developer/Xcode/iOS DeviceSupport', '%LIBRARY%/Developer/Xcode/watchOS DeviceSupport', '%LIBRARY%/Developer/Xcode/tvOS DeviceSupport']
+tier = 'safe'
+category = 'dev'
+what = 'Debug symbols Xcode copies off each iPhone, iPad or Watch you have ever plugged in, kept per OS version.'
+if_deleted = 'Xcode copies them again the next time you connect a device running that version.'
+
+[[rule]]
+id = 'simulator-caches'
+name = 'Simulator caches'
+paths = ['%LIBRARY%/Developer/CoreSimulator/Caches']
+tier = 'safe'
+category = 'dev'
+what = "Cached runtime data for the iOS and watchOS simulators."
+if_deleted = 'Rebuilt the next time you launch a simulator. Your simulated devices and their contents are not affected.'
+
+[[rule]]
+id = 'homebrew-cache'
+name = 'Homebrew downloads'
+paths = ['%CACHE%/Homebrew']
+owner_exe = ['brew']
+tier = 'safe'
+category = 'dev'
+what = 'Downloaded bottles and source archives Homebrew keeps after installing or upgrading packages.'
+if_deleted = 'Homebrew downloads a package again if it needs to reinstall it. `brew cleanup` does the same job.'
+
+[[rule]]
+id = 'npm-cache'
+name = 'npm cache'
+paths = ['%USERPROFILE%/.npm/_cacache']
+tier = 'safe'
+category = 'dev'
+what = 'Copies of packages npm keeps so it can install them again without downloading.'
+if_deleted = 'The next install of each package downloads it again.'
+
+[[rule]]
+id = 'yarn-cache'
+name = 'Yarn cache'
+paths = ['%CACHE%/Yarn', '%USERPROFILE%/.yarn/berry/cache']
+tier = 'safe'
+category = 'dev'
+what = 'Packages Yarn keeps so it can install them again without downloading.'
+if_deleted = 'The next install downloads them again.'
+
+[[rule]]
+id = 'pip-cache'
+name = 'pip cache'
+paths = ['%CACHE%/pip']
+tier = 'safe'
+category = 'dev'
+what = 'Python packages pip keeps so it can install them again without downloading.'
+if_deleted = 'The next install downloads them again.'
+
+[[rule]]
+id = 'cargo-cache'
+name = 'Rust package cache'
+paths = ['%USERPROFILE%/.cargo/registry/cache', '%USERPROFILE%/.cargo/registry/src', '%USERPROFILE%/.cargo/git/checkouts']
+owner_exe = ['cargo']
+tier = 'safe'
+category = 'dev'
+what = 'Downloaded and unpacked copies of the Rust crates your projects depend on.'
+if_deleted = 'The next build downloads them again. Your installed toolchain is not affected.'
+
+[[rule]]
+id = 'go-build-cache'
+name = 'Go build cache'
+paths = ['%CACHE%/go-build']
+tier = 'safe'
+category = 'dev'
+what = 'Compiled package output the Go toolchain reuses between builds.'
+if_deleted = 'Your next Go build is slower while it recompiles.'
+
+[[rule]]
+id = 'gradle-cache'
+name = 'Gradle cache'
+paths = ['%USERPROFILE%/.gradle/caches']
+tier = 'safe'
+category = 'dev'
+what = 'Dependencies and build output Gradle keeps between builds.'
+if_deleted = 'Your next Gradle build downloads dependencies and recompiles.'
+
+[[rule]]
+id = 'cocoapods-cache'
+name = 'CocoaPods cache'
+paths = ['%CACHE%/CocoaPods']
+tier = 'safe'
+category = 'dev'
+what = 'Downloaded pod specs and sources CocoaPods keeps between installs.'
+if_deleted = 'The next `pod install` downloads them again.'
+
+[[rule]]
+id = 'playwright-browsers'
+name = 'Playwright browsers'
+paths = ['%CACHE%/ms-playwright']
+tier = 'safe'
+category = 'dev'
+what = 'Full browser builds Playwright downloads for testing.'
+if_deleted = 'Playwright downloads them again the next time your tests run.'
+
+[[rule]]
+id = 'huggingface-cache'
+name = 'Hugging Face model cache'
+paths = ['%USERPROFILE%/.cache/huggingface']
+tier = 'your_call'
+category = 'cache'
+what = 'Machine-learning models and datasets downloaded by Hugging Face tools. Often very large.'
+if_deleted = 'Anything you use again is downloaded again, which can be many gigabytes.'
+
+[[rule]]
+id = 'browser-caches'
+name = 'Browser caches'
+paths = [
+  '%CACHE%/Google/Chrome/*/Cache',
+  '%CACHE%/Google/Chrome/*/Code Cache',
+  '%CACHE%/com.apple.Safari',
+  '%CACHE%/Firefox/Profiles/*/cache2',
+  '%CACHE%/BraveSoftware/Brave-Browser/*/Cache',
+  '%CACHE%/Microsoft Edge/*/Cache',
+]
+tier = 'safe'
+category = 'cache'
+what = 'Copies of web pages, images and scripts browsers keep to load sites faster.'
+if_deleted = 'Sites load a little slower the first time. Logins, history and bookmarks are not affected.'
+
+[[rule]]
+id = 'quicklook-cache'
+name = 'Quick Look thumbnails'
+paths = ['%CACHE%/com.apple.QuickLook.thumbnailcache']
+tier = 'safe'
+category = 'cache'
+what = 'Preview thumbnails macOS generates for files in Finder.'
+if_deleted = 'Finder regenerates a preview the next time you look at a folder.'
+
+[[rule]]
+id = 'metal-shader-cache'
+name = 'Graphics shader cache'
+paths = ['%CACHE%/com.apple.metal', '%CACHE%/com.apple.metalfe']
+tier = 'safe'
+category = 'games'
+what = "macOS' cache of compiled graphics shaders."
+if_deleted = 'Rebuilt automatically as games and apps run. The first few seconds after launch may stutter once.'
+
+[[rule]]
+id = 'saved-app-state'
+name = 'Reopened window state'
+paths = ['%SAVEDSTATE%']
+tier = 'safe'
+category = 'cache'
+what = 'What each app had open last time, so it can restore its windows when you reopen it.'
+if_deleted = 'Apps open with fresh windows instead of restoring your last session.'
+
+[[rule]]
+id = 'app-logs'
+name = 'App logs'
+paths = ['%LOGS%']
+tier = 'safe'
+category = 'cache'
+what = 'Diagnostic logs apps write about their own activity.'
+if_deleted = 'Nothing, unless you are in the middle of sending a bug report that asks for them.'
+
+[[rule]]
+id = 'crashreporter-logs'
+name = 'Crash reports'
+paths = ['%LOGS%/DiagnosticReports']
+tier = 'safe'
+category = 'cache'
+what = 'Reports macOS writes when an app crashes.'
+if_deleted = 'Nothing, unless you are about to send one to a developer.'
+
+[[rule]]
+id = 'ios-backups'
+name = 'iPhone and iPad backups'
+paths = ['%CONFIG%/MobileSync/Backup']
+tier = 'your_call'
+category = 'leftover'
+what = 'Full local backups of iPhones and iPads made by Finder. Usually many gigabytes each.'
+if_deleted = "You lose the ability to restore a device from a local backup. If you also back up to iCloud, that copy is unaffected. Check the dates before removing anything."
+
+[[rule]]
+id = 'xcode-archives'
+name = 'Xcode archives'
+paths = ['%LIBRARY%/Developer/Xcode/Archives']
+tier = 'your_call'
+category = 'dev'
+what = 'Built and signed copies of apps you have archived for distribution, with their debug symbols.'
+if_deleted = "You lose the ability to symbolicate crash reports from those exact builds, and you cannot re-upload a build without rebuilding it."
+
+# ---------------------------------------------------------------------------
+# Known leftovers (tier = leftover). Only flagged when the owner is gone.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+id = 'docker-leftovers'
+name = 'Docker Desktop leftovers'
+paths = ['%USERPROFILE%/.docker', '%CONFIG%/Docker', '%CONFIG%/Docker Desktop', '%CACHE%/com.docker.docker']
+owner = ['Docker Desktop', 'Docker']
+owner_exe = ['Docker', 'docker', 'com.docker.backend']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, CLI plugins and cached data from Docker Desktop.'
+if_deleted = 'Nothing, unless you reinstall Docker and want your old settings back.'
+
+[[rule]]
+id = 'vscode-leftovers'
+name = 'Visual Studio Code leftovers'
+paths = ['%CONFIG%/Code', '%USERPROFILE%/.vscode']
+owner = ['Visual Studio Code', 'Code']
+owner_exe = ['Code']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, extensions and workspace state from Visual Studio Code.'
+if_deleted = 'Nothing, unless you reinstall it and want your old settings and extensions back.'
+
+[[rule]]
+id = 'cursor-leftovers'
+name = 'Cursor leftovers'
+paths = ['%CONFIG%/Cursor', '%USERPROFILE%/.cursor']
+owner = ['Cursor']
+owner_exe = ['Cursor']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, extensions and workspace state from the Cursor editor.'
+if_deleted = 'Nothing, unless you reinstall it and want your old settings back.'
+
+[[rule]]
+id = 'jetbrains-leftovers'
+name = 'JetBrains IDE leftovers'
+paths = ['%CONFIG%/JetBrains', '%CACHE%/JetBrains', '%LOGS%/JetBrains']
+owner = ['IntelliJ', 'PyCharm', 'WebStorm', 'RubyMine', 'CLion', 'GoLand', 'Rider', 'DataGrip', 'Android Studio']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, indexes and caches from JetBrains IDEs.'
+if_deleted = 'Nothing, unless you reinstall one and want your old settings back.'
+
+[[rule]]
+id = 'unity-leftovers'
+name = 'Unity leftovers'
+paths = ['%CONFIG%/Unity', '%CACHE%/Unity', '%CONFIG%/UnityHub', '%CACHE%/com.unity3d.unityhub']
+owner = ['Unity', 'Unity Hub']
+owner_exe = ['Unity', 'Unity Hub']
+tier = 'leftover'
+category = 'leftover'
+what = 'Licences, caches and editor settings from Unity and Unity Hub.'
+if_deleted = 'Nothing, unless you reinstall Unity. You may need to sign in again.'
+
+[[rule]]
+id = 'adobe-leftovers'
+name = 'Adobe leftovers'
+paths = ['%CONFIG%/Adobe', '%CACHE%/Adobe', '%LOGS%/Adobe']
+owner = ['Adobe']
+owner_exe = ['Adobe Creative Cloud', 'Adobe Desktop Service', 'Photoshop', 'Illustrator', 'Premiere Pro', 'After Effects', 'InDesign', 'Lightroom']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, caches and logs from Adobe apps and Creative Cloud.'
+if_deleted = "Nothing, unless you reinstall an Adobe app and want its old preferences and presets back."
+
+[[rule]]
+id = 'steam-leftovers'
+name = 'Steam leftovers'
+paths = ['%CONFIG%/Steam/appcache', '%CONFIG%/Steam/logs', '%CONFIG%/Steam/depotcache']
+owner = ['Steam']
+owner_exe = ['steam_osx', 'Steam']
+tier = 'safe'
+category = 'games'
+what = "Steam's own caches and logs, separate from your installed games."
+if_deleted = 'Steam rebuilds them the next time it starts. Your games and saves are not affected.'
+
+[[rule]]
+id = 'spotify-cache'
+name = 'Spotify cache'
+paths = ['%CACHE%/com.spotify.client', '%CONFIG%/Spotify/PersistentCache']
+owner = ['Spotify']
+owner_exe = ['Spotify']
+tier = 'safe'
+category = 'cache'
+what = 'Audio Spotify has cached so it can play tracks without streaming them again.'
+if_deleted = 'Tracks stream again the next time you play them. Downloads marked for offline use are re-downloaded.'
+
+[[rule]]
+id = 'slack-cache'
+name = 'Slack cache'
+paths = ['%CONFIG%/Slack/Cache', '%CONFIG%/Slack/Code Cache', '%CONFIG%/Slack/Service Worker/CacheStorage']
+owner = ['Slack']
+owner_exe = ['Slack']
+tier = 'safe'
+category = 'cache'
+what = 'Images, files and web content Slack keeps to load conversations faster.'
+if_deleted = 'Slack re-downloads what it needs. Your messages are on the server and are not affected.'
+
+[[rule]]
+id = 'discord-cache'
+name = 'Discord cache'
+paths = ['%CONFIG%/discord/Cache', '%CONFIG%/discord/Code Cache', '%CONFIG%/discord/GPUCache']
+owner = ['Discord']
+owner_exe = ['Discord']
+tier = 'safe'
+category = 'cache'
+what = 'Images and web content Discord keeps to load servers faster.'
+if_deleted = 'Discord re-downloads what it needs. Your messages are not affected.'
+
+[[rule]]
+id = 'zoom-leftovers'
+name = 'Zoom leftovers'
+paths = ['%CONFIG%/zoom.us', '%CACHE%/us.zoom.xos', '%LOGS%/zoom.us']
+owner = ['Zoom', 'zoom.us']
+owner_exe = ['zoom.us']
+tier = 'leftover'
+category = 'leftover'
+what = 'Settings, caches and logs from Zoom.'
+if_deleted = 'Nothing, unless you reinstall Zoom and want your old settings back. Saved recordings live in your home folder and are not affected.'
+
+[[rule]]
+id = 'electron-updater-cache'
+name = 'App update downloads'
+paths = ['%CACHE%/*-updater', '%CACHE%/*.ShipIt']
+tier = 'safe'
+category = 'temp'
+what = 'Installers apps downloaded to update themselves, kept after the update finished.'
+if_deleted = 'Nothing. An app downloads a fresh copy next time it updates.'
+
+[[rule]]
+id = 'wine-crossover-leftovers'
+name = 'Wine and CrossOver leftovers'
+paths = ['%CONFIG%/CrossOver', '%USERPROFILE%/.wine']
+owner = ['CrossOver', 'Wine']
+owner_exe = ['CrossOver', 'wine']
+tier = 'leftover'
+category = 'games'
+what = 'Windows compatibility bottles and their installed programs.'
+if_deleted = 'Anything installed inside a bottle is gone, including its settings and saves.'
+
+# ---------------------------------------------------------------------------
+# Large derived caches. The model for these is Windows' D3DSCache entry: big, entirely
+# rebuildable, and in a place nobody would think to look. A rule for software that isn't
+# installed resolves to nothing and costs nothing, so breadth here is close to free — the care
+# goes into the tier and the "if you remove it" line, not into whether the path exists.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+id = 'adobe-media-cache'
+name = 'Adobe media cache'
+paths = ['%CONFIG%/Adobe/Common/Media Cache Files', '%CONFIG%/Adobe/Common/Media Cache']
+tier = 'safe'
+category = 'cache'
+what = 'Conformed audio and peak files Premiere and After Effects generate for every clip you import. Usually the largest thing Adobe leaves on a disk.'
+if_deleted = 'Premiere and After Effects reconform footage as you open each project, which takes a few moments per clip. No project or media is affected.'
+
+[[rule]]
+id = 'after-effects-disk-cache'
+name = 'After Effects disk cache'
+paths = ['%CACHE%/Adobe/After Effects/*/*Disk Cache*', '%CONFIG%/Adobe/Common/AE Disk Cache*']
+tier = 'safe'
+category = 'cache'
+what = 'Rendered frames After Effects keeps so it can play a composition back without rendering it again.'
+if_deleted = 'Previews render again the next time you play a composition.'
+
+[[rule]]
+id = 'adobe-scratch'
+name = 'Photoshop scratch and recovery files'
+paths = ['%CONFIG%/Adobe/Adobe Photoshop */AutoRecover', '%TEMP%/Photoshop Temp*']
+tier = 'your_call'
+category = 'temp'
+what = 'Photoshop scratch files and automatically recovered documents. Scratch files are left behind when Photoshop crashes and can run to many gigabytes.'
+if_deleted = 'Anything Photoshop recovered but you have not reopened and saved is lost. Check Photoshop for recovered documents first.'
+
+[[rule]]
+id = 'simulator-devices'
+name = 'Simulator devices'
+paths = ['%LIBRARY%/Developer/CoreSimulator/Devices']
+tier = 'your_call'
+category = 'dev'
+what = 'Every simulated iPhone, iPad and Watch Xcode has created, with the apps and data installed on each. Several gigabytes per device.'
+if_deleted = 'The simulated devices and anything installed on them are gone. Xcode recreates devices on demand, but app data and logged-in states are lost. `xcrun simctl delete unavailable` removes only the obsolete ones.'
+
+[[rule]]
+id = 'unreal-ddc'
+name = 'Unreal engine cache'
+paths = ['%CONFIG%/Epic/UnrealEngine/*/DerivedDataCache', '%CONFIG%/Epic/UnrealEngine/Common/DerivedDataCache', '%CACHE%/Epic']
+tier = 'safe'
+category = 'games'
+what = 'Shaders and cooked assets Unreal shares between projects.'
+if_deleted = 'Unreal rebuilds what it needs the next time you open a project. The first load is slow.'
+
+[[rule]]
+id = 'unity-shared-cache'
+name = 'Unity shared cache'
+paths = ['%LIBRARY%/Unity/cache', '%CACHE%/com.unity3d.UnityEditor', '%CONFIG%/Unity/cache']
+tier = 'safe'
+category = 'games'
+what = 'Packages and imported assets Unity caches across all your projects.'
+if_deleted = 'Unity downloads and reimports what it needs. Projects are unaffected.'
+
+[[rule]]
+id = 'android-emulators'
+name = 'Android emulator images'
+paths = ['%LIBRARY%/Android/sdk/system-images', '%USERPROFILE%/.android/avd']
+tier = 'your_call'
+category = 'dev'
+what = 'Full Android system images and the virtual devices built from them. Several gigabytes each.'
+if_deleted = 'The virtual devices and their installed apps and data are gone. Android Studio can download the images again.'
+
+[[rule]]
+id = 'node-tool-caches'
+name = 'JavaScript tool caches'
+paths = [
+  '%LIBRARY%/pnpm/store',
+  '%USERPROFILE%/.bun/install/cache',
+  '%CACHE%/Cypress',
+  '%CACHE%/puppeteer',
+  '%CACHE%/electron',
+  '%CACHE%/electron-builder',
+  '%CACHE%/node-gyp',
+  '%CACHE%/typescript',
+]
+tier = 'safe'
+category = 'dev'
+what = 'Packages, browser builds and prebuilt binaries that JavaScript tooling keeps so it can install them again without downloading.'
+if_deleted = 'The next install or test run downloads what it needs again.'
+
+[[rule]]
+id = 'python-tool-caches'
+name = 'Python tool caches'
+paths = ['%CACHE%/pypoetry', '%USERPROFILE%/.cache/uv', '%USERPROFILE%/.conda/pkgs', '%USERPROFILE%/.cache/pre-commit']
+tier = 'safe'
+category = 'dev'
+what = 'Downloaded packages and build artefacts kept by Poetry, uv, conda and pre-commit.'
+if_deleted = 'The next install downloads them again.'
+
+[[rule]]
+id = 'other-lang-caches'
+name = 'Other language caches'
+paths = ['%USERPROFILE%/go/pkg/mod', '%USERPROFILE%/.m2/repository', '%USERPROFILE%/.pub-cache', '%USERPROFILE%/.ivy2/cache', '%USERPROFILE%/.sbt']
+tier = 'your_call'
+category = 'dev'
+what = 'Downloaded dependencies for Go, Maven, Dart/Flutter, Ivy and sbt projects.'
+if_deleted = 'Your next build downloads them again, which needs a working network and can take a while on a big project.'
+
+[[rule]]
+id = 'teams-cache'
+name = 'Microsoft Teams cache'
+paths = ['%CONFIG%/Microsoft/Teams/Cache', '%CONFIG%/Microsoft/Teams/Code Cache', '%CONFIG%/Microsoft/Teams/GPUCache', '%CACHE%/com.microsoft.teams']
+owner = ['Microsoft Teams']
+owner_exe = ['Microsoft Teams']
+tier = 'safe'
+category = 'cache'
+what = 'Images, files and web content Teams keeps to load conversations faster.'
+if_deleted = 'Teams re-downloads what it needs. Your messages live on the server.'
+
+[[rule]]
+id = 'apple-app-caches'
+name = 'System service caches'
+paths = ['%CACHE%/com.apple.appstore', '%CACHE%/com.apple.helpd', '%CACHE%/com.apple.iTunes', '%CACHE%/com.apple.akd', '%CACHE%/com.apple.Safari/WebKitCache']
+tier = 'safe'
+category = 'cache'
+what = "Caches belonging to the App Store, Help Viewer and other built-in services."
+if_deleted = 'Rebuilt automatically as you use each service.'

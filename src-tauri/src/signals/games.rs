@@ -2,7 +2,7 @@
 
 use rayon::prelude::*;
 
-use super::{finding, item, last_changed, Taken};
+use super::{finding, item, last_changed, looks_like_saves, Taken};
 use crate::fsutil;
 use crate::report::{Category, Confidence, Finding, Tier};
 use crate::scan::Ctx;
@@ -65,12 +65,9 @@ pub fn find_steam(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
 }
 
 pub fn find_saves(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
-    let roots = [
-        (ctx.roots.home.join("Saved Games"), "saves"),
-        (ctx.roots.home.join(r"Documents\My Games"), "saves"),
-        (ctx.roots.local_low.clone(), "game data"),
-    ];
-    let candidates: Vec<_> = roots
+    let candidates: Vec<_> = ctx
+        .roots
+        .save_roots()
         .iter()
         .flat_map(|(root, label)| fsutil::child_dirs(root).into_iter().map(move |d| (d, *label)))
         .filter(|(d, _)| {
@@ -96,6 +93,11 @@ pub fn find_saves(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             f.evidence.push(format!("No installed game or program matches “{name}”."));
             f.evidence.push(last_changed(ctx, u.newest));
             f.last_modified = Some(u.newest);
+            // Vouching is what allows removal inside a protected folder, so it has to be earned.
+            // The filters above only establish that nothing installed claims this folder, which is
+            // an absence of evidence rather than evidence. Finding actual save files by name and
+            // extension is the positive proof, so the vouch waits on that.
+            f.vouched = looks_like_saves(dir);
             f.items.push(item(dir, &u));
             f.recompute_bytes();
             Some(f)

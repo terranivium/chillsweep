@@ -7,11 +7,13 @@ use crate::scan::Ctx;
 
 pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     let mut dirs = fsutil::child_dirs(&ctx.roots.home);
-    dirs.retain(|d| !fsutil::file_name(d).eq_ignore_ascii_case("AppData"));
-    for root in [&ctx.roots.local, &ctx.roots.roaming] {
-        dirs.extend(fsutil::child_dirs(root).into_iter().filter(|d| !ctx.rules.is_system_name(&fsutil::file_name(d))));
+    // The per-app data tree is judged by other signals, through roots that know its shape.
+    // Looking at it here would only ever ask whether `~/Library` itself is empty.
+    let app_data_root = if cfg!(windows) { "AppData" } else { "Library" };
+    dirs.retain(|d| !fsutil::file_name(d).eq_ignore_ascii_case(app_data_root));
+    for root in ctx.roots.empty_roots() {
+        dirs.extend(fsutil::child_dirs(&root).into_iter().filter(|d| !ctx.rules.is_system_name(&fsutil::file_name(d))));
     }
-    dirs.extend(fsutil::child_dirs(&ctx.roots.local.join("Programs")));
     // `.cache`-style shared folders and Windows' own `Programs\Common` are containers apps
     // expect to exist.
     dirs.retain(|d| {

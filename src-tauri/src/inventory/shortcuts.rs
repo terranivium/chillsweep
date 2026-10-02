@@ -8,9 +8,12 @@ use crate::roots::Roots;
 pub fn gather(roots: &Roots, inv: &mut Inventory) {
     let public = std::env::var_os("PUBLIC").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Users\Public"));
     let dirs = [
-        roots.roaming.join(r"Microsoft\Windows\Start Menu\Programs"),
-        roots.program_data.join(r"Microsoft\Windows\Start Menu\Programs"),
-        roots.roaming.join(r"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"),
+        roots.config.join(r"Microsoft\Windows\Start Menu\Programs"),
+        // `unwrap_or_default()` here would yield a RELATIVE path, which `children` would then
+        // resolve against the process working directory. `detect()` always sets `shared` on
+        // Windows, so this is a guard against a future change rather than a live bug.
+        roots.shared.clone().unwrap_or_else(|| roots.config.clone()).join(r"Microsoft\Windows\Start Menu\Programs"),
+        roots.config.join(r"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"),
         roots.home.join("Desktop"),
         roots.home.join(r"OneDrive\Desktop"),
         public.join("Desktop"),

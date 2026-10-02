@@ -51,6 +51,23 @@ protected = [
   '%APPDATA%\Thunderbird',
 ]
 
+# Off limits for good: refused at removal time no matter which signal found it or how certain it
+# was. `protected` above is a filter a signal with real proof may look past; this is the floor
+# underneath it, and nothing passes.
+never_touch = [
+  '%LOCALAPPDATA%\com.chillsweep.app',
+  '%APPDATA%\com.chillsweep.app',
+  '%LOCALAPPDATA%\ChillSweep',
+  '%USERPROFILE%\.ssh',
+  '%USERPROFILE%\.gnupg',
+  '%USERPROFILE%\.aws',
+  '%USERPROFILE%\OneDrive',
+  '%APPDATA%\Bitwarden',
+  '%APPDATA%\KeePass',
+  '%APPDATA%\KeePassXC',
+  '%LOCALAPPDATA%\1Password',
+]
+
 # Top-level AppData folders that belong to Windows itself. Never judged as leftovers.
 system_names = [
   'Microsoft', 'Packages', 'Temp', 'Programs', 'Application Data', 'History',
@@ -92,6 +109,7 @@ exe_stopwords = [
 
 # git-ignored folders in a repo that are pure build output (rebuilt by the project's build).
 build_dirs = [
+  'Library', 'Temp', 'Logs', 'Intermediate', 'Saved', 'DerivedDataCache', 'Binaries', '.godot',
   'dist', 'build', 'out', 'target', '.next', '.nuxt', '.svelte-kit', '.output', '.turbo',
   '.parcel-cache', '.cache', 'coverage', '.pytest_cache', '__pycache__', '.mypy_cache',
   '.ruff_cache', 'obj', 'bin', '.gradle', 'cmake-build-debug', 'cmake-build-release',
@@ -117,6 +135,287 @@ how = 'Reinstall dependencies with your package manager.'
 [[restore_dir]]
 name = 'Pods'
 how = 'Run `pod install` to restore it.'
+
+# ---------------------------------------------------------------------------
+# Project folders.
+#
+# A creative tool or engine leaves a marker file beside its content. That marker is the only
+# thing that tells a Pro Tools session or a Unity project apart from any other folder — the
+# folder name says nothing — and it is also what earns these findings the right to be acted on
+# inside otherwise protected places like Documents.
+#
+# `markers` are file names, or `*` patterns, or a relative path written with `/`.
+# `regenerable` lists the parts the tool rebuilds by itself, each with its own tier.
+#
+# NEVER list a content folder as regenerable. `Audio Files`, `Media`, `Recorded`, `Assets`,
+# Cubase's `Audio` — these hold the work itself. Getting this wrong is the one way this feature
+# could destroy something irreplaceable, so when in doubt leave a folder out: an unlisted folder
+# is simply never offered.
+# ---------------------------------------------------------------------------
+
+# ── Game engines. By far the largest caches on any machine that has them. ──
+
+[[project_kind]]
+id = 'unity'
+name = 'Unity project'
+markers = ['ProjectSettings/ProjectVersion.txt', 'Assembly-CSharp.csproj']
+[[project_kind.regenerable]]
+name = 'Library'
+tier = 'safe'
+what = "Unity's import cache: every asset converted into the form the engine actually loads."
+if_deleted = 'Unity reimports the project the next time you open it. That can take a while on a big project, but nothing is lost.'
+[[project_kind.regenerable]]
+name = 'Temp'
+tier = 'safe'
+what = 'Scratch files from a Unity session.'
+if_deleted = 'Nothing. Only present while the editor is running, or left behind after a crash.'
+[[project_kind.regenerable]]
+name = 'Logs'
+tier = 'safe'
+what = 'Unity editor logs for this project.'
+if_deleted = 'Nothing, unless you are chasing a bug and need them.'
+[[project_kind.regenerable]]
+name = 'obj'
+tier = 'safe'
+what = 'Intermediate C# build output.'
+if_deleted = 'Rebuilt on the next script compile.'
+
+[[project_kind]]
+id = 'unreal'
+name = 'Unreal project'
+markers = ['*.uproject']
+[[project_kind.regenerable]]
+name = 'DerivedDataCache'
+tier = 'safe'
+what = 'Cooked shaders, textures and meshes Unreal derives from your source assets. Routinely the biggest folder on the disk.'
+if_deleted = 'Unreal rebuilds it as you open levels. The first load of each is slow, then it is back to normal.'
+[[project_kind.regenerable]]
+name = 'Intermediate'
+tier = 'safe'
+what = 'Build intermediates and generated code.'
+if_deleted = 'Recreated the next time the project builds.'
+[[project_kind.regenerable]]
+name = 'Binaries'
+tier = 'safe'
+what = 'Compiled modules for this project.'
+if_deleted = 'Recreated the next time the project builds. A source build is needed, so this is only safe if you can compile.'
+[[project_kind.regenerable]]
+name = 'Saved'
+tier = 'your_call'
+what = 'Autosaves, logs, crash dumps and local editor settings.'
+if_deleted = 'Autosaved copies of unsaved work go with it. Check for recent autosaves first.'
+
+[[project_kind]]
+id = 'godot'
+name = 'Godot project'
+markers = ['project.godot']
+[[project_kind.regenerable]]
+name = '.godot'
+tier = 'safe'
+what = "Godot's imported-asset cache for this project."
+if_deleted = 'Godot reimports the assets next time the project opens.'
+
+# ── Video. Preview and proxy media, which is derived from your footage. ──
+
+[[project_kind]]
+id = 'premiere'
+name = 'Premiere project'
+markers = ['*.prproj']
+[[project_kind.regenerable]]
+name = 'Adobe Premiere Pro Preview Files'
+tier = 'safe'
+what = 'Rendered timeline previews.'
+if_deleted = 'Premiere re-renders previews as you work. Your edit is untouched.'
+[[project_kind.regenerable]]
+name = 'Adobe Premiere Pro Audio Previews'
+tier = 'safe'
+what = 'Rendered audio previews.'
+if_deleted = 'Re-rendered as you work.'
+[[project_kind.regenerable]]
+name = 'Adobe Premiere Pro Auto-Save'
+tier = 'your_call'
+what = 'Automatic copies of the project file as it was at earlier points.'
+if_deleted = 'You lose the ability to step back to an earlier version of the edit.'
+
+[[project_kind]]
+id = 'resolve'
+name = 'DaVinci Resolve project'
+markers = ['*.drp']
+[[project_kind.regenerable]]
+name = 'CacheClip'
+tier = 'safe'
+what = 'Resolve’s render cache for clips and timelines.'
+if_deleted = 'Resolve re-caches as you play back. Only playback smoothness is affected.'
+[[project_kind.regenerable]]
+name = 'ProxyMedia'
+tier = 'safe'
+what = 'Low-resolution stand-ins Resolve generates for smooth editing.'
+if_deleted = 'Resolve falls back to the original media, and can regenerate proxies on request.'
+
+# ── 3D, documents and the long tail. ──
+
+[[project_kind]]
+id = 'blender'
+name = 'Blender project'
+markers = ['*.blend']
+[[project_kind.regenerable]]
+name = '*.blend1'
+tier = 'safe'
+what = 'The previous save of a Blender file, kept automatically.'
+if_deleted = 'You lose the ability to step back one save.'
+[[project_kind.regenerable]]
+name = '*.blend2'
+tier = 'safe'
+what = 'The save before last.'
+if_deleted = 'You lose the ability to step back two saves.'
+
+[[project_kind]]
+id = 'latex'
+name = 'LaTeX document'
+markers = ['*.tex']
+[[project_kind.regenerable]]
+name = '*.synctex.gz'
+tier = 'safe'
+what = 'The map between your source and the built PDF, used for click-to-source.'
+if_deleted = 'Rebuilt the next time you compile.'
+[[project_kind.regenerable]]
+name = '*.aux'
+tier = 'safe'
+what = 'Cross-reference and citation bookkeeping from the last build.'
+if_deleted = 'Rebuilt on the next compile. The first pass may show unresolved references until it runs twice.'
+[[project_kind.regenerable]]
+name = '*.fls'
+tier = 'safe'
+what = 'The list of files the last build touched.'
+if_deleted = 'Rebuilt on the next compile.'
+
+# ── Audio. Smallest of the groups, but the most numerous on an audio machine. ──
+
+[[project_kind]]
+id = 'protools'
+name = 'Pro Tools session'
+markers = ['*.ptx', '*.ptf']
+content = ['Audio Files']
+[[project_kind.regenerable]]
+name = 'WaveCache.wfm'
+tier = 'safe'
+what = "Pro Tools' cache of the waveform shapes it draws in the edit window."
+if_deleted = 'Pro Tools redraws the waveforms when it next opens the session.'
+[[project_kind.regenerable]]
+name = 'Session File Backups'
+tier = 'safe'
+what = 'Automatic copies of the session file as it was at earlier points.'
+if_deleted = 'You lose the ability to step back to an earlier version of the session. The session itself stays.'
+[[project_kind.regenerable]]
+name = 'Rendered Files'
+tier = 'safe'
+what = 'Temporary renders from Elastic Audio and AudioSuite processing.'
+if_deleted = 'Pro Tools re-renders them when the session opens.'
+[[project_kind.regenerable]]
+name = 'Fade Files'
+tier = 'safe'
+what = 'Pre-computed fades for the session.'
+if_deleted = 'Pro Tools recreates the fades when the session opens.'
+[[project_kind.regenerable]]
+name = 'Bounced Files'
+tier = 'your_call'
+what = 'Mixdowns bounced out of this session.'
+if_deleted = "Gone unless you bounce again — and these may be the finished deliverable you were asked for."
+[[project_kind.regenerable]]
+name = 'Video Files'
+tier = 'your_call'
+what = 'Video imported into the session to work against.'
+if_deleted = "The session loses its picture. Fine if you still have the video elsewhere, not if this is the only copy."
+
+[[project_kind]]
+id = 'reaper'
+name = 'REAPER project'
+markers = ['*.rpp']
+[[project_kind.regenerable]]
+name = '*.reapeaks'
+tier = 'safe'
+what = 'Peak files REAPER uses to draw waveforms.'
+if_deleted = 'REAPER rebuilds them, which takes a moment per file on next open.'
+[[project_kind.regenerable]]
+name = '*.rpp-bak'
+tier = 'safe'
+what = 'The previous save of the project file.'
+if_deleted = 'You lose the ability to step back one save.'
+[[project_kind.regenerable]]
+name = '*.rpp-PROX'
+tier = 'safe'
+what = 'Proxy project files REAPER writes while rendering.'
+if_deleted = 'Nothing. Left behind by an interrupted render.'
+
+[[project_kind]]
+id = 'ableton'
+name = 'Ableton Live set'
+markers = ['*.als']
+content = ['Samples']
+[[project_kind.regenerable]]
+name = '*.asd'
+tier = 'safe'
+what = 'Analysis files holding warp markers and waveform data for each sample.'
+if_deleted = 'Live re-analyses the samples on next load. Any warp markers you set by hand are lost.'
+[[project_kind.regenerable]]
+name = 'Backup'
+tier = 'safe'
+what = 'Automatic copies of the set as it was at earlier points.'
+if_deleted = 'You lose the ability to step back to an earlier version of the set.'
+
+[[project_kind]]
+id = 'cubase'
+name = 'Cubase project'
+markers = ['*.cpr', '*.npr']
+content = ['Audio']
+[[project_kind.regenerable]]
+name = 'Images'
+tier = 'safe'
+what = 'Waveform images Cubase draws from your audio.'
+if_deleted = 'Cubase redraws them when the project opens.'
+[[project_kind.regenerable]]
+name = 'Freeze'
+tier = 'safe'
+what = 'Rendered copies of frozen tracks.'
+if_deleted = 'Unfreeze and refreeze the tracks to recreate them.'
+
+[[project_kind]]
+id = 'studioone'
+name = 'Studio One song'
+markers = ['*.song']
+content = ['Media']
+[[project_kind.regenerable]]
+name = 'Cache'
+tier = 'safe'
+what = 'Rendered and cached audio for this song.'
+if_deleted = 'Studio One recreates it as the song plays back.'
+[[project_kind.regenerable]]
+name = 'Bounces'
+tier = 'your_call'
+what = 'Mixdowns bounced out of this song.'
+if_deleted = 'Gone unless you bounce again, and these may be the finished deliverable.'
+
+[[project_kind]]
+id = 'bitwig'
+name = 'Bitwig project'
+markers = ['*.bwproject']
+[[project_kind.regenerable]]
+name = 'cache'
+tier = 'safe'
+what = 'Cached audio and analysis for this project.'
+if_deleted = 'Bitwig rebuilds it on next open.'
+
+# Recognised so that nothing mistakes them for junk, but never looked inside: a `.logicx`,
+# `.band` or `.fcpbundle` is a package, which the scan treats as a single document by design.
+[[project_kind]]
+id = 'logic'
+name = 'Logic project'
+markers = ['*.logicx']
+
+[[project_kind]]
+id = 'finalcut'
+name = 'Final Cut library'
+markers = ['*.fcpbundle']
 
 # ---------------------------------------------------------------------------
 # Known caches (tier = safe). Contents are rebuilt automatically.
@@ -424,3 +723,110 @@ tier = 'leftover'
 category = 'leftover'
 what = 'Data from the AWS Toolkit extension for Visual Studio.'
 if_deleted = 'Nothing.'
+
+# ---------------------------------------------------------------------------
+# Large derived caches, in the same spirit as the D3DSCache entry above: big, entirely
+# rebuildable, and somewhere nobody would think to look. A rule for software that isn't
+# installed resolves to nothing, so the care goes into the tier and the "if you remove it"
+# line rather than into whether the path exists.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+id = 'adobe-media-cache'
+name = 'Adobe media cache'
+paths = ['%APPDATA%\Adobe\Common\Media Cache Files', '%APPDATA%\Adobe\Common\Media Cache']
+tier = 'safe'
+category = 'cache'
+what = 'Conformed audio and peak files Premiere and After Effects generate for every clip you import. Usually the largest thing Adobe leaves on a disk.'
+if_deleted = 'Premiere and After Effects reconform footage as you open each project, which takes a few moments per clip. No project or media is affected.'
+
+[[rule]]
+id = 'after-effects-disk-cache'
+name = 'After Effects disk cache'
+paths = ['%LOCALAPPDATA%\Adobe\After Effects\*\*Disk Cache*', '%APPDATA%\Adobe\Common\AE Disk Cache*']
+tier = 'safe'
+category = 'cache'
+what = 'Rendered frames After Effects keeps so it can play a composition back without rendering it again.'
+if_deleted = 'Previews render again the next time you play a composition.'
+
+[[rule]]
+id = 'adobe-scratch'
+name = 'Photoshop scratch and recovery files'
+paths = ['%APPDATA%\Adobe\Adobe Photoshop *\AutoRecover', '%TEMP%\Photoshop Temp*']
+tier = 'your_call'
+category = 'temp'
+what = 'Photoshop scratch files and automatically recovered documents. Scratch files are left behind when Photoshop crashes and can run to many gigabytes.'
+if_deleted = 'Anything Photoshop recovered but you have not reopened and saved is lost. Check Photoshop for recovered documents first.'
+
+[[rule]]
+id = 'unreal-ddc'
+name = 'Unreal engine cache'
+paths = ['%LOCALAPPDATA%\UnrealEngine\Common\DerivedDataCache', '%LOCALAPPDATA%\UnrealEngine\*\DerivedDataCache', '%LOCALAPPDATA%\EpicGamesLauncher\Saved\webcache']
+tier = 'safe'
+category = 'games'
+what = 'Shaders and cooked assets Unreal shares between projects.'
+if_deleted = 'Unreal rebuilds what it needs the next time you open a project. The first load is slow.'
+
+[[rule]]
+id = 'unity-shared-cache'
+name = 'Unity shared cache'
+paths = ['%LOCALAPPDATA%\Unity\cache', '%APPDATA%\Unity\cache', '%LOCALLOW%\Unity\Caches']
+tier = 'safe'
+category = 'games'
+what = 'Packages and imported assets Unity caches across all your projects.'
+if_deleted = 'Unity downloads and reimports what it needs. Projects are unaffected.'
+
+[[rule]]
+id = 'android-emulators'
+name = 'Android emulator images'
+paths = ['%LOCALAPPDATA%\Android\Sdk\system-images', '%USERPROFILE%\.android\avd']
+tier = 'your_call'
+category = 'dev'
+what = 'Full Android system images and the virtual devices built from them. Several gigabytes each.'
+if_deleted = 'The virtual devices and their installed apps and data are gone. Android Studio can download the images again.'
+
+[[rule]]
+id = 'node-tool-caches'
+name = 'JavaScript tool caches'
+paths = [
+  '%LOCALAPPDATA%\pnpm\store',
+  '%USERPROFILE%\.bun\install\cache',
+  '%LOCALAPPDATA%\Cypress\Cache',
+  '%LOCALAPPDATA%\puppeteer',
+  '%LOCALAPPDATA%\electron\Cache',
+  '%LOCALAPPDATA%\electron-builder\Cache',
+  '%LOCALAPPDATA%\node-gyp\Cache',
+]
+tier = 'safe'
+category = 'dev'
+what = 'Packages, browser builds and prebuilt binaries that JavaScript tooling keeps so it can install them again without downloading.'
+if_deleted = 'The next install or test run downloads what it needs again.'
+
+[[rule]]
+id = 'python-tool-caches'
+name = 'Python tool caches'
+paths = ['%APPDATA%\pypoetry\Cache', '%LOCALAPPDATA%\uv\cache', '%USERPROFILE%\.conda\pkgs', '%USERPROFILE%\.cache\pre-commit']
+tier = 'safe'
+category = 'dev'
+what = 'Downloaded packages and build artefacts kept by Poetry, uv, conda and pre-commit.'
+if_deleted = 'The next install downloads them again.'
+
+[[rule]]
+id = 'other-lang-caches'
+name = 'Other language caches'
+paths = ['%USERPROFILE%\go\pkg\mod', '%USERPROFILE%\.m2\repository', '%USERPROFILE%\.pub-cache', '%USERPROFILE%\.ivy2\cache', '%USERPROFILE%\.sbt']
+tier = 'your_call'
+category = 'dev'
+what = 'Downloaded dependencies for Go, Maven, Dart/Flutter, Ivy and sbt projects.'
+if_deleted = 'Your next build downloads them again, which needs a working network and can take a while on a big project.'
+
+[[rule]]
+id = 'teams-cache'
+name = 'Microsoft Teams cache'
+paths = ['%APPDATA%\Microsoft\Teams\Cache', '%APPDATA%\Microsoft\Teams\Code Cache', '%APPDATA%\Microsoft\Teams\GPUCache']
+owner = ['Microsoft Teams']
+owner_exe = ['Teams', 'ms-teams']
+tier = 'safe'
+category = 'cache'
+what = 'Images, files and web content Teams keeps to load conversations faster.'
+if_deleted = 'Teams re-downloads what it needs. Your messages live on the server.'

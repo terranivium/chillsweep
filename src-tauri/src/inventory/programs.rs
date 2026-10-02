@@ -14,7 +14,7 @@ pub fn gather_processes(inv: &mut Inventory) {
     for process in sys.processes().values() {
         let Some(exe) = process.exe() else { continue };
         let lower = fsutil::lower(exe);
-        if lower.starts_with(r"c:\windows\") {
+        if is_system_exe(&lower) {
             continue;
         }
         inv.summary.running_processes += 1;
@@ -31,36 +31,30 @@ pub fn gather_processes(inv: &mut Inventory) {
 /// Folder names under Program Files / per-user Programs, and every .exe found in the
 /// places apps install to (including per-user installs inside AppData).
 pub fn gather_program_folders(roots: &Roots, rules: &Rules, inv: &mut Inventory) {
-    for pf in &roots.program_files {
-        for dir in fsutil::child_dirs(pf) {
-            inv.add_name(&fsutil::file_name(&dir), Source::ProgramFolder);
+    for app_dir in &roots.app_dirs {
+        for dir in fsutil::child_dirs(app_dir) {
+            inv.add_name(&app_folder_name(&dir), Source::ProgramFolder);
             inv.summary.program_files_seen += 1;
         }
-        index_exes(pf, 4, rules, inv);
     }
-    let per_user = roots.local.join("Programs");
-    for dir in fsutil::child_dirs(&per_user) {
-        // An empty folder here is itself a leftover, not proof of an install.
-        if has_exe(&dir, 3) {
-            inv.add_name(&fsutil::file_name(&dir), Source::ProgramFolder);
+    if let Some(per_user) = roots.per_user_programs() {
+        for dir in fsutil::child_dirs(&per_user) {
+            // An empty folder here is itself a leftover, not proof of an install.
+            if has_exe(&dir, 3) {
+                inv.add_name(&fsutil::file_name(&dir), Source::ProgramFolder);
+            }
         }
     }
-    let packages = roots.local.join("Packages");
-    for dir in fsutil::child_dirs(&packages) {
-        // "Microsoft.WindowsTerminal_8wekyb3d8bbwe" → "Microsoft.WindowsTerminal"
-        let name = fsutil::file_name(&dir);
-        let family = name.split('_').next().unwrap_or(&name);
-        let app = family.rsplit('.').next().unwrap_or(family);
-        inv.add_name(app, Source::StoreApp);
+    if let Some(packages) = roots.store_packages() {
+        for dir in fsutil::child_dirs(&packages) {
+            // "Microsoft.WindowsTerminal_8wekyb3d8bbwe" → "Microsoft.WindowsTerminal"
+            let name = fsutil::file_name(&dir);
+            let family = name.split('_').next().unwrap_or(&name);
+            let app = family.rsplit('.').next().unwrap_or(family);
+            inv.add_name(app, Source::StoreApp);
+        }
     }
-    for (root, depth) in [
-        (roots.local.clone(), 4),
-        (roots.roaming.clone(), 3),
-        (roots.home.join(".local"), 3),
-        (roots.home.join("Downloads"), 2),
-        (roots.home.join("Desktop"), 2),
-        (roots.home.join("Documents"), 2),
-    ] {
+    for (root, depth) in roots.exe_scan_roots() {
         index_exes(&root, depth, rules, inv);
     }
     // Portable apps often live in a folder at the top of the home directory.
@@ -72,6 +66,21 @@ pub fn gather_program_folders(roots: &Roots, rules: &Rules, inv: &mut Inventory)
     }
     inv.exe_paths.sort();
     inv.exe_paths.dedup();
+}
+
+/// The OS's own binaries, which say nothing about what the user installed.
+fn is_system_exe(lower: &str) -> bool {
+    #[cfg(windows)]
+    const PREFIXES: [&str; 1] = [r"c:\windows\"];
+    #[cfg(target_os = "macos")]
+    const PREFIXES: [&str; 5] = ["/system/", "/usr/", "/sbin/", "/bin/", "/library/apple/"];
+    PREFIXES.iter().any(|p| lower.starts_with(p))
+}
+
+/// `Foo.app` → `Foo`. On Windows a program folder is already just the app's name.
+fn app_folder_name(dir: &Path) -> String {
+    let name = fsutil::file_name(dir);
+    name.strip_suffix(".app").unwrap_or(&name).to_string()
 }
 
 const SKIP_DIRS: [&str; 7] = ["temp", "packages", "node_modules", ".git", "microsoft", "windowsapps", "__pycache__"];

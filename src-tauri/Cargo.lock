@@ -484,6 +484,7 @@ name = "chillsweep"
 version = "1.0.0"
 dependencies = [
  "ignore",
+ "plist",
  "rayon",
  "regex",
  "serde",

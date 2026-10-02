@@ -8,6 +8,7 @@ mod empty;
 mod games;
 mod known;
 mod orphans;
+mod projects;
 mod stray;
 mod temp;
 mod versions;
@@ -41,10 +42,14 @@ type Signal = fn(&Ctx, &Taken) -> Vec<Finding>;
 
 /// Signals in priority order: curated knowledge first, then targeted signals, then the
 /// general "nothing owns this" style signals.
-const SIGNALS: [Signal; 11] = [
+const SIGNALS: [Signal; 12] = [
     known::find,
     games::find_steam,
     dev::find,
+    // After `dev`, so a git repo that also holds a project file is described in git terms.
+    // Before `orphans`, `find_saves`, `empty` and `stray`, whose guesses about these folders
+    // are vaguer — running first means `Taken` mutes them.
+    projects::find,
     downloads::find,
     temp::find,
     versions::find,
@@ -54,6 +59,8 @@ const SIGNALS: [Signal; 11] = [
     stray::find,
     cachedirs::find,
 ];
+
+pub use projects::find_projects;
 
 pub fn run_all(ctx: &Ctx) -> Vec<Finding> {
     let mut taken = Taken::default();
@@ -81,6 +88,7 @@ pub fn finding(id: impl Into<String>, title: impl Into<String>, tier: Tier, cate
         if_deleted: None,
         evidence: Vec::new(),
         items: Vec::new(),
+        vouched: false,
         bytes: 0,
         last_modified: None,
     }
@@ -96,10 +104,31 @@ pub fn age_days(ctx: &Ctx, newest: u64) -> u64 {
 
 const CONFIG_EXTS: [&str; 10] = ["txt", "json", "ini", "cfg", "conf", "yml", "yaml", "toml", "xml", "config"];
 
+/// What an absolute path looks like in a config file.
+///
+/// On macOS this is anchored on the handful of real top-level directories rather than a bare
+/// `/`, which would match every URL path and every passing mention of `/usr/bin`.
+#[cfg(windows)]
+const ABS_PATH_RE: &str = r#"(?i)\b[a-z]:\\[^\r\n"'<>|*?]{2,240}"#;
+#[cfg(not(windows))]
+const ABS_PATH_RE: &str = r#"(?i)/(?:users|applications|library|opt|private|var|usr/local|etc)/[^\r\n"'<>|*?:]{2,240}"#;
+
+/// Undo JSON/INI escaping so the paths in the text can be compared against the real thing.
+fn normalize_refs(text: &str) -> String {
+    let unescaped = text.replace(r"\\", r"\");
+    // Windows config files write either separator and mean the same folder. On macOS `\` is a
+    // legal filename character, so rewriting it would corrupt every POSIX path in the file.
+    if cfg!(windows) {
+        unescaped.replace('/', r"\")
+    } else {
+        unescaped
+    }
+}
+
 /// Small config files inside `dir` that point at absolute paths which no longer exist,
 /// e.g. conda's environments.txt pointing at a deleted Miniconda folder.
 pub fn dead_refs(dir: &Path) -> Vec<String> {
-    let re = Regex::new(r#"(?i)\b[a-z]:\\[^\r\n"'<>|*?]{2,240}"#).unwrap();
+    let re = Regex::new(ABS_PATH_RE).unwrap();
     let mut out = Vec::new();
     let mut files_read = 0;
     fsutil::walk_dirs(dir, 2, |d, _| {
@@ -113,7 +142,7 @@ pub fn dead_refs(dir: &Path) -> Vec<String> {
             }
             files_read += 1;
             let Ok(bytes) = std::fs::read(&file) else { continue };
-            let text = String::from_utf8_lossy(&bytes).replace(r"\\", r"\").replace('/', r"\");
+            let text = normalize_refs(&String::from_utf8_lossy(&bytes));
             let mut any_alive = false;
             let mut missing = Vec::new();
             for m in re.find_iter(&text) {
@@ -162,27 +191,36 @@ pub fn looks_like_saves(dir: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// A dead absolute path, spelled the way this platform's config files would.
+    #[cfg(windows)]
+    const DEAD: [&str; 2] = [r"C:\Users\nobody\miniconda3", r"C:\Users\nobody\miniconda3\envs\x"];
+    #[cfg(not(windows))]
+    const DEAD: [&str; 2] = ["/Users/nobody/miniconda3", "/Users/nobody/miniconda3/envs/x"];
+
     #[test]
     fn finds_dead_references() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("environments.txt"), "C:\\Users\\nobody\\miniconda3\r\nC:\\Users\\nobody\\miniconda3\\envs\\x\r\n").unwrap();
+        let text = format!("{}\r\n{}\r\n", DEAD[0], DEAD[1]);
+        std::fs::write(dir.path().join("environments.txt"), text).unwrap();
         let refs = dead_refs(dir.path());
         assert_eq!(refs.len(), 1);
-        assert!(refs[0].contains("miniconda3"));
+        assert!(refs[0].contains("miniconda3"), "{refs:?}");
     }
 
     #[test]
     fn live_reference_is_not_dead() {
         let dir = tempfile::tempdir().unwrap();
+        // JSON escapes a backslash, so a Windows path is doubled in the file's bytes.
         let alive = dir.path().to_string_lossy().replace('\\', "\\\\");
-        std::fs::write(dir.path().join("config.json"), format!("{{\"a\": \"{alive}\", \"b\": \"C:\\\\nope\\\\gone\"}}")).unwrap();
+        let dead = DEAD[0].replace('\\', "\\\\");
+        std::fs::write(dir.path().join("config.json"), format!("{{\"a\": \"{alive}\", \"b\": \"{dead}\"}}")).unwrap();
         assert!(dead_refs(dir.path()).is_empty());
     }
 
     #[test]
     fn detects_saves() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(r"Game\Saved\SaveGames")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Game").join("Saved").join("SaveGames")).unwrap();
         assert!(looks_like_saves(dir.path()));
         let other = tempfile::tempdir().unwrap();
         std::fs::write(other.path().join("settings.ini"), "x").unwrap();

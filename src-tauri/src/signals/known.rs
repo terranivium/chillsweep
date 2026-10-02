@@ -46,6 +46,10 @@ pub fn find(ctx: &Ctx, _taken: &Taken) -> Vec<Finding> {
             for p in &paths {
                 let u = fsutil::usage(p);
                 newest = newest.max(u.newest);
+                // A curated rule names this exact path on purpose, which is the strongest proof
+                // there is — stronger than any heuristic. That is what lets a rule reach inside a
+                // protected folder, e.g. a browser's cache under its own profile directory.
+                f.vouched = true;
                 f.items.push(item(p, &u));
                 if has_owner && rule.tier != RuleTier::Safe && u.is_dir {
                     f.evidence.extend(dead_refs(p));

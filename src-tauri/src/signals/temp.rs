@@ -12,8 +12,11 @@ const BIG: u64 = 50 << 20;
 const IF_DELETED: &str = "Nothing. Installers and apps leave these behind when they don't clean up after themselves.";
 
 pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
-    let entries: Vec<_> = fsutil::children(&ctx.roots.temp)
-        .into_iter()
+    let entries: Vec<_> = ctx
+        .roots
+        .temp
+        .iter()
+        .flat_map(|t| fsutil::children(t))
         .filter(|(p, _)| !taken.covers(p))
         .map(|(p, _)| p)
         .collect();
@@ -30,7 +33,7 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     for (path, u) in old {
         if u.bytes >= BIG {
             let name = fsutil::file_name(path);
-            let mut f = finding(format!("temp:{}", fsutil::lower(path)), format!("Temp\\{name}"), Tier::Safe, Category::Temp, Confidence::High);
+            let mut f = finding(format!("temp:{}", fsutil::lower(path)), format!("Temp{}{name}", std::path::MAIN_SEPARATOR), Tier::Safe, Category::Temp, Confidence::High);
             f.what = Some("A leftover folder in your user Temp folder.".into());
             f.if_deleted = Some(IF_DELETED.into());
             f.evidence.push(format!("Nothing inside has changed in {} days.", age_days(ctx, u.newest)));

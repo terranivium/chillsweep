@@ -14,6 +14,13 @@ use crate::roots::Roots;
 use crate::rules::Rules;
 use crate::scan::Ctx;
 
+/// What this OS calls the place deleted things go. Used in the Rust messages below and handed
+/// to the page through `AppInfo`, so there is one spelling of it in the whole app.
+#[cfg(windows)]
+pub const BIN_NAME: &str = "Recycle Bin";
+#[cfg(not(windows))]
+pub const BIN_NAME: &str = "Trash";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Method {
@@ -43,6 +50,11 @@ pub struct CleanResult {
     pub recycled_bytes: u64,
     pub skipped: usize,
     pub started_at: u64,
+    /// Where to reveal in the file manager so the user can put things back by hand.
+    ///
+    /// Set only where in-app undo is unavailable, which is how the page decides between an
+    /// "Undo" button and a "Show in Trash" one — no platform check needed in the page itself.
+    pub reveal_dir: Option<String>,
 }
 
 impl CleanResult {
@@ -55,6 +67,25 @@ impl CleanResult {
     }
 }
 
+/// How items are moved to the Recycle Bin / Trash.
+///
+/// On macOS the `trash` crate defaults to `DeleteMethod::Finder`, which runs
+/// `osascript -e 'tell application "Finder" to delete ...'`. That is a subprocess and an Apple
+/// Events consent prompt, and without an `NSAppleEventsUsageDescription` string macOS kills the
+/// process outright rather than returning an error. `NsFileManager` calls `trashItemAtURL:`
+/// directly: no subprocess, no extra permission, and faster. The cost is that Finder's "Put
+/// Back" may not appear, so recovery is dragging the item out of the Trash.
+fn trash_ctx() -> trash::TrashContext {
+    #[allow(unused_mut)]
+    let mut ctx = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    ctx
+}
+
 /// The checks used right before removing: protected paths and what is running now.
 pub fn guard_ctx() -> Ctx {
     Ctx::new(Roots::detect(), Rules::load(), Inventory::running_only())
@@ -64,6 +95,7 @@ pub fn guard_ctx() -> Ctx {
 /// `permanent_safe` is set; everything else goes to the Recycle Bin.
 pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx: &Ctx) -> CleanResult {
     let mut result = CleanResult { started_at: fsutil::now(), ..CleanResult::default() };
+    let bin = trash_ctx();
     for id in finding_ids {
         let Some(finding) = report.findings.iter().find(|f| &f.id == id) else {
             result.outcomes.push(Outcome {
@@ -88,14 +120,14 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
                 method,
                 error: None,
             };
-            if let Some(reason) = refuse_reason(path, ctx) {
+            if let Some(reason) = refuse_reason(path, ctx, finding.vouched) {
                 outcome.method = Method::Skipped;
                 outcome.error = Some(reason.into());
             } else {
                 match method {
-                    Method::RecycleBin => match trash::delete(path) {
+                    Method::RecycleBin => match bin.delete(path) {
                         Ok(()) => result.recycled_bytes += item.bytes,
-                        Err(e) => outcome.error = Some(format!("Couldn't move it to the Recycle Bin: {e}")),
+                        Err(e) => outcome.error = Some(format!("Couldn't move it to the {BIN_NAME}: {e}")),
                     },
                     Method::Permanent => {
                         let failures = remove_tree(path);
@@ -114,12 +146,49 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
             result.outcomes.push(outcome);
         }
     }
+    // macOS has no API to list or restore the Trash, so there is nothing to undo through.
+    // Point the user at it instead — Finder can put things back by hand.
+    //
+    // Counted, not measured: empty folders and 0-byte stray files are real removals worth
+    // offering a way back from, and gating on bytes would leave the page showing an Undo button
+    // that this platform cannot honour.
+    if !cfg!(windows) && !result.recycled_paths().is_empty() {
+        result.reveal_dir = trash_reveal_target(ctx);
+    }
     result
 }
 
-fn refuse_reason(path: &Path, ctx: &Ctx) -> Option<&'static str> {
-    if ctx.is_protected(path) {
-        Some("This location is protected.")
+/// What to hand the page's "Show in Trash" action.
+///
+/// Revealing `~/.Trash` itself is wrong: the reveal shows an item *in its parent*, so Finder
+/// would open the home folder with an invisible `.Trash` entry selected. Naming the newest thing
+/// inside instead opens the Trash window with the just-removed item highlighted, which is what
+/// the button says it does.
+///
+/// `trash::delete` returns `()` and never says what the item was renamed to on a collision
+/// (`foo` may land as `foo 2`), so "newest" is the best available handle on it.
+/// Known limitation: this assumes the home Trash. Something removed from a non-boot volume goes
+/// to that volume's `.Trashes/<uid>` instead. Everything ChillSweep scans lives under `$HOME`,
+/// so that case does not arise today — but if the scan ever reaches another volume, this would
+/// point at the wrong folder and needs deriving from the removed path instead.
+#[cfg(not(windows))]
+fn trash_reveal_target(ctx: &Ctx) -> Option<String> {
+    let trash = ctx.roots.home.join(".Trash");
+    if !trash.is_dir() {
+        return None;
+    }
+    let newest = fsutil::children(&trash).into_iter().max_by_key(|(_, md)| fsutil::mtime(md)).map(|(p, _)| p);
+    newest.unwrap_or(trash).to_str().map(str::to_string)
+}
+
+#[cfg(windows)]
+fn trash_reveal_target(_ctx: &Ctx) -> Option<String> {
+    None
+}
+
+fn refuse_reason(path: &Path, ctx: &Ctx, vouched: bool) -> Option<&'static str> {
+    if let Some(reason) = ctx.refuse_location(path, vouched) {
+        Some(reason)
     } else if ctx.inv.running_inside(path).is_some() {
         Some("A running program is using it. Close the program and try again.")
     } else if fs::symlink_metadata(path).is_err() {
@@ -191,12 +260,13 @@ pub struct RestoreResult {
 
 /// Put items back from the Recycle Bin: the newest entry for each original path that
 /// was deleted at or after `since`.
+#[cfg(windows)]
 pub fn undo(paths: &[String], since: u64) -> RestoreResult {
     let mut result = RestoreResult::default();
     let bin = match trash::os_limited::list() {
         Ok(items) => items,
         Err(e) => {
-            result.failed = paths.iter().map(|p| RestoreFailure { path: p.clone(), error: format!("Couldn't read the Recycle Bin: {e}") }).collect();
+            result.failed = paths.iter().map(|p| RestoreFailure { path: p.clone(), error: format!("Couldn't read the {BIN_NAME}: {e}") }).collect();
             return result;
         }
     };
@@ -209,18 +279,36 @@ pub fn undo(paths: &[String], since: u64) -> RestoreResult {
             .filter(|i| i.time_deleted >= since && i.original_path().to_string_lossy().to_lowercase() == wanted)
             .max_by_key(|i| i.time_deleted);
         match newest {
-            None => result.failed.push(RestoreFailure { path: path.clone(), error: "It's no longer in the Recycle Bin.".into() }),
+            None => result.failed.push(RestoreFailure { path: path.clone(), error: format!("It's no longer in the {BIN_NAME}.") }),
             Some(item) => match trash::os_limited::restore_all([item.clone()]) {
                 Ok(()) => result.restored.push(path.clone()),
                 Err(trash::Error::RestoreCollision { .. }) => result.failed.push(RestoreFailure {
                     path: path.clone(),
-                    error: "Something new already exists at that location, so it was left in the Recycle Bin.".into(),
+                    error: format!("Something new already exists at that location, so it was left in the {BIN_NAME}."),
                 }),
                 Err(e) => result.failed.push(RestoreFailure { path: path.clone(), error: e.to_string() }),
             },
         }
     }
     result
+}
+
+/// macOS gives no way to read or restore the Trash — `trash::os_limited` is Windows and
+/// Freedesktop only — so there is nothing to undo through. The UI offers "Show in Trash"
+/// instead, and Finder's own Put Back does the job. Nothing is lost either way: the items are
+/// still in the Trash.
+#[cfg(not(windows))]
+pub fn undo(paths: &[String], _since: u64) -> RestoreResult {
+    RestoreResult {
+        restored: Vec::new(),
+        failed: paths
+            .iter()
+            .map(|p| RestoreFailure {
+                path: p.clone(),
+                error: "Undo isn't available on this platform. Open the Trash and use Put Back.".into(),
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]
@@ -241,6 +329,7 @@ mod tests {
                 if_deleted: None,
                 evidence: vec![],
                 items: vec![Item { path: path.to_string_lossy().into_owned(), bytes: u.bytes, files: u.files, is_dir: u.is_dir }],
+                vouched: false,
                 bytes: u.bytes,
                 last_modified: None,
             }],
@@ -259,7 +348,7 @@ mod tests {
         let dir = root.join("chillsweep-test-fixture");
         fs::create_dir_all(dir.join("nested")).unwrap();
         fs::write(dir.join("a.bin"), vec![0u8; 2048]).unwrap();
-        fs::write(dir.join(r"nested\b.bin"), vec![0u8; 1024]).unwrap();
+        fs::write(dir.join("nested").join("b.bin"), vec![0u8; 1024]).unwrap();
         dir
     }
 
@@ -274,10 +363,25 @@ mod tests {
     #[test]
     fn rejects_protected_paths() {
         // Inside ~/.ssh, and deliberately nonexistent so a bug could never touch real files.
-        let path = Roots::detect().home.join(r".ssh\chillsweep-test-does-not-exist");
+        let path = Roots::detect().home.join(".ssh").join("chillsweep-test-does-not-exist");
         let r = clean(&report_with(Tier::Leftover, &path), &["f1".into()], true, &ctx());
         assert_eq!(r.outcomes[0].method, Method::Skipped);
-        assert_eq!(r.outcomes[0].error.as_deref(), Some("This location is protected."));
+        // `.ssh` is on the absolute list, so it reports the stronger of the two refusals.
+        assert_eq!(r.outcomes[0].error.as_deref(), Some("This location is off limits."));
+    }
+
+    /// The whole point of vouching: a signal that can prove what something is may act inside a
+    /// merely-protected folder, but the absolute list is still absolute.
+    #[test]
+    fn vouching_passes_protected_but_never_the_absolute_list() {
+        let ctx = ctx();
+        let home = Roots::detect().home;
+        let in_documents = home.join("Documents").join("chillsweep-test-does-not-exist");
+        let in_ssh = home.join(".ssh").join("chillsweep-test-does-not-exist");
+
+        assert!(ctx.refuse_location(&in_documents, false).is_some(), "Documents is protected");
+        assert!(ctx.refuse_location(&in_documents, true).is_none(), "proof should get past protected");
+        assert_eq!(ctx.refuse_location(&in_ssh, true), Some("This location is off limits."), "nothing gets past this");
     }
 
     #[test]
@@ -291,6 +395,8 @@ mod tests {
         assert!(!dir.exists());
     }
 
+    // Mandatory locking is a Windows thing: on macOS an open file deletes happily.
+    #[cfg(windows)]
     #[test]
     fn locked_file_is_left_and_reported() {
         use std::os::windows::fs::OpenOptionsExt;
@@ -304,6 +410,7 @@ mod tests {
         assert_eq!(r.freed_bytes, 1024);
     }
 
+    #[cfg(windows)]
     #[test]
     fn recycle_then_undo_restores() {
         let tmp = tempfile::tempdir().unwrap();
@@ -314,7 +421,7 @@ mod tests {
         assert!(!dir.exists());
         let restored = undo(&r.recycled_paths(), r.started_at);
         assert!(restored.failed.is_empty(), "{:?}", restored.failed);
-        assert!(dir.join(r"nested\b.bin").exists());
+        assert!(dir.join("nested").join("b.bin").exists());
     }
 
     #[test]

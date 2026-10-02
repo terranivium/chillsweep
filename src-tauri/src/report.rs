@@ -21,6 +21,8 @@ pub enum Category {
     Dev,
     Games,
     Downloads,
+    /// A project folder made by a creative tool or engine: a Pro Tools session, a Unity project.
+    Projects,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -55,6 +57,10 @@ pub struct Finding {
     /// Plain-language reasons, one sentence each.
     pub evidence: Vec<String>,
     pub items: Vec<Item>,
+    /// The signal had positive, path-local proof of what this is — a project marker file beside
+    /// the cache it wants to clear — so removal may look past the broad `protected` list.
+    /// Never past `never_touch`. Signals that are only guessing leave this false.
+    pub vouched: bool,
     pub bytes: u64,
     /// Newest modification time anywhere inside, as unix seconds.
     pub last_modified: Option<u64>,
@@ -80,6 +86,38 @@ pub struct InventorySummary {
     pub running_processes: usize,
     pub program_files_seen: usize,
     pub steam_games: usize,
+    /// The footer sentence, written here rather than in the page.
+    ///
+    /// The counts above mean different things on each OS — "shortcuts" are Start menu links on
+    /// Windows and Dock entries or launch agents on macOS — so whoever writes the sentence has
+    /// to know which OS this is. Doing it in Rust keeps that knowledge out of the frontend and
+    /// out of `examples/scan.rs`, which had its own copy of the same sentence.
+    pub summary_text: String,
+}
+
+impl InventorySummary {
+    /// "Checked against 231 installed apps, 31 Dock and login items, …".
+    pub fn describe(&self) -> String {
+        let n = |count: usize, one: &str, many: &str| format!("{count} {}", if count == 1 { one } else { many });
+        // Each noun needs its own singular as well as its plural, or a machine with exactly one
+        // of something reads in the other platform's vocabulary.
+        let (app, apps) = if cfg!(windows) { ("installed program", "installed programs") } else { ("installed app", "installed apps") };
+        let (link, links) = if cfg!(windows) { ("shortcut", "shortcuts") } else { ("Dock or login item", "Dock and login items") };
+        let (folder, folders) =
+            if cfg!(windows) { ("Program Files folder", "Program Files folders") } else { ("app folder", "app folders") };
+        let mut parts = vec![
+            n(self.installed_programs, app, apps),
+            n(self.shortcuts, link, links),
+            n(self.running_processes, "running program", "running programs"),
+        ];
+        if self.program_files_seen > 0 {
+            parts.push(n(self.program_files_seen, folder, folders));
+        }
+        if self.steam_games > 0 {
+            parts.push(n(self.steam_games, "Steam game", "Steam games"));
+        }
+        format!("Checked against {}", parts.join(", "))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,4 +1,4 @@
-//! App data folders that nothing installed on this PC owns.
+//! App data folders that nothing installed on this machine owns.
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -14,10 +14,9 @@ const MIN_BYTES: u64 = 100 * 1024;
 
 pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     let mut candidates: Vec<(PathBuf, &str)> = Vec::new();
-    for root in [&ctx.roots.local, &ctx.roots.roaming] {
-        candidates.extend(fsutil::child_dirs(root).into_iter().map(|d| (d, "app data")));
+    for (root, kind) in ctx.roots.orphan_candidates() {
+        candidates.extend(fsutil::child_dirs(&root).into_iter().map(|d| (d, kind)));
     }
-    candidates.extend(fsutil::child_dirs(&ctx.roots.local.join("Programs")).into_iter().map(|d| (d, "install folder")));
     candidates.extend(
         fsutil::child_dirs(&ctx.roots.home)
             .into_iter()
@@ -70,7 +69,7 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
                 return None;
             } else if days < 30 && !has_refs {
                 f.confidence = Confidence::Medium;
-                f.if_deleted = Some("Probably nothing, but it was used recently. If an app you still use loses its settings, restore it from the Recycle Bin.".into());
+                f.if_deleted = Some(format!("Probably nothing, but it was used recently. If an app you still use loses its settings, restore it from the {}.", crate::clean::BIN_NAME));
             } else {
                 f.if_deleted = Some("Nothing, unless you reinstall the app and want its old settings back.".into());
             }

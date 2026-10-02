@@ -3,23 +3,63 @@
 //! `Application Data` that loop back on themselves).
 
 use std::fs::{self, Metadata};
-use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
-const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-
 pub const DAY: u64 = 86_400;
 
-pub fn is_reparse(md: &Metadata) -> bool {
-    md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+#[cfg(windows)]
+mod attrs {
+    use std::fs::Metadata;
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+    /// A junction or symlink: something that points elsewhere rather than holding the data.
+    pub fn is_reparse(md: &Metadata) -> bool {
+        md.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+
+    /// Hidden *and* system: Windows' marker for "this is the OS's business, not the user's".
+    pub fn is_hidden_system(md: &Metadata) -> bool {
+        let a = md.file_attributes();
+        a & FILE_ATTRIBUTE_HIDDEN != 0 && a & FILE_ATTRIBUTE_SYSTEM != 0
+    }
 }
 
-pub fn is_hidden_system(md: &Metadata) -> bool {
-    let a = md.file_attributes();
-    a & FILE_ATTRIBUTE_HIDDEN != 0 && a & FILE_ATTRIBUTE_SYSTEM != 0
+#[cfg(unix)]
+mod attrs {
+    use std::fs::Metadata;
+
+    /// There are no junctions here, so a symlink is the whole story.
+    pub fn is_reparse(md: &Metadata) -> bool {
+        md.file_type().is_symlink()
+    }
+
+    /// The closest thing to Windows' hidden+system is the Finder "hidden" flag. The dot-prefix
+    /// half of the rule lives in `is_hidden_name`, because a name is all the caller has in some
+    /// places. `st_flags` is a BSD extension, not part of the portable Unix trait.
+    #[cfg(target_os = "macos")]
+    pub fn is_hidden_system(md: &Metadata) -> bool {
+        use std::os::macos::fs::MetadataExt;
+        const UF_HIDDEN: u32 = 0x8000;
+        md.st_flags() & UF_HIDDEN != 0
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn is_hidden_system(_md: &Metadata) -> bool {
+        false
+    }
+}
+
+pub use attrs::{is_hidden_system, is_reparse};
+
+/// Hidden by name rather than by flag: a leading dot. On Windows nothing is hidden this way,
+/// but plenty of Unix tools still litter `~` with dotfiles that are none of our business.
+pub fn is_hidden_name(name: &str) -> bool {
+    cfg!(unix) && name.starts_with('.')
 }
 
 pub fn mtime(md: &Metadata) -> u64 {
@@ -94,8 +134,32 @@ pub fn child_dirs(dir: &Path) -> Vec<PathBuf> {
     children(dir).into_iter().filter(|(_, md)| md.is_dir()).map(|(p, _)| p).collect()
 }
 
+/// Directory extensions macOS treats as a single document rather than a folder: app bundles,
+/// frameworks, plug-ins, photo libraries. Their insides are an app's private business.
+#[cfg(target_os = "macos")]
+const PACKAGE_EXTS: [&str; 14] = [
+    "app", "framework", "bundle", "plugin", "kext", "appex", "xpc", "docset", "photoslibrary", "fcpbundle", "logicx", "band", "rtfd", "pkg",
+];
+
+/// A folder that should be treated as opaque: never walked into, never reported piecemeal.
+///
+/// Without this, the version signal happily proposes deleting
+/// `Foo.app/Contents/Frameworks/Bar.framework/Versions/A` — part of an installed app. It also
+/// keeps the scan from crawling tens of thousands of files inside every bundle.
+pub fn is_package(dir: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        dir.extension().is_some_and(|e| PACKAGE_EXTS.contains(&e.to_string_lossy().to_lowercase().as_str()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = dir;
+        false
+    }
+}
+
 /// Visit directories breadth-first down to `max_depth` (root is depth 0). `visit` returns
-/// false to stop descending into that directory.
+/// false to stop descending into that directory. Packages are never descended into.
 pub fn walk_dirs(root: &Path, max_depth: usize, mut visit: impl FnMut(&Path, usize) -> bool) {
     let mut queue = std::collections::VecDeque::from([(root.to_path_buf(), 0usize)]);
     while let Some((dir, depth)) = queue.pop_front() {
@@ -103,7 +167,9 @@ pub fn walk_dirs(root: &Path, max_depth: usize, mut visit: impl FnMut(&Path, usi
             continue;
         }
         for child in child_dirs(&dir) {
-            queue.push_back((child, depth + 1));
+            if !is_package(&child) {
+                queue.push_back((child, depth + 1));
+            }
         }
     }
 }
@@ -116,11 +182,22 @@ pub fn lower(p: &Path) -> String {
     p.to_string_lossy().to_lowercase()
 }
 
+/// The path separator, as a byte and as a char, for the OS this was built for.
+const SEP: char = std::path::MAIN_SEPARATOR;
+
 /// True if `inner` is `outer` or somewhere below it (case-insensitive).
+///
+/// Callers lowercase both sides first. On macOS that is right for the default case-insensitive
+/// APFS volume, and on a case-sensitive one it can only ever match *more* than it should —
+/// which, for the protection and already-covered checks this backs, is the safe direction.
 pub fn is_within(inner: &str, outer: &str) -> bool {
-    let inner = inner.trim_end_matches('\\');
-    let outer = outer.trim_end_matches('\\');
-    inner == outer || (inner.len() > outer.len() && inner.starts_with(outer) && inner.as_bytes()[outer.len()] == b'\\')
+    let inner = inner.trim_end_matches(SEP);
+    let outer = outer.trim_end_matches(SEP);
+    // `outer` trimmed to nothing means the filesystem root, which contains everything.
+    if outer.is_empty() {
+        return inner.starts_with(SEP);
+    }
+    inner == outer || (inner.len() > outer.len() && inner.starts_with(outer) && inner.as_bytes()[outer.len()] == SEP as u8)
 }
 
 /// "today", "3 days ago", or "on 2023-10-18".
@@ -194,10 +271,18 @@ mod tests {
         assert!(wildcard("cache", "Cache"));
     }
 
+    /// An absolute path in this platform's spelling: `c:\a\b` or `/a/b`.
+    fn abs(parts: &[&str]) -> String {
+        let root = if cfg!(windows) { "c:" } else { "" };
+        format!("{root}{SEP}{}", parts.join(&SEP.to_string()))
+    }
+
     #[test]
     fn within() {
-        assert!(is_within(r"c:\a\b", r"c:\a"));
-        assert!(is_within(r"c:\a", r"c:\a"));
-        assert!(!is_within(r"c:\ab", r"c:\a"));
+        assert!(is_within(&abs(&["a", "b"]), &abs(&["a"])));
+        assert!(is_within(&abs(&["a"]), &abs(&["a"])));
+        assert!(!is_within(&abs(&["ab"]), &abs(&["a"])));
+        // A trailing separator on the outer path must not change the answer.
+        assert!(is_within(&abs(&["a", "b"]), &format!("{}{SEP}", abs(&["a"]))));
     }
 }

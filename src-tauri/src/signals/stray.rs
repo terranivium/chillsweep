@@ -17,9 +17,15 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             continue;
         }
         let name = fsutil::file_name(&file);
+        // A leading dot at the top of a Unix home means a deliberate marker or config file.
+        // `.hushlogin` and `.bash_sessions_disable` are *meant* to be empty — being 0 bytes is
+        // how they do their job, not evidence that something forgot to clean them up.
+        if fsutil::is_hidden_name(&name) {
+            continue;
+        }
         let reason = if md.len() == 0 {
             format!("{name} is empty (0 bytes).")
-        } else if tmp_re.is_match(&name) && fsutil::now().saturating_sub(fsutil::mtime(&md)) > fsutil::DAY {
+        } else if tmp_re.is_match(&name) && ctx.now.saturating_sub(fsutil::mtime(&md)) > fsutil::DAY {
             format!("{name} is a temporary file an app didn't clean up.")
         } else {
             continue;

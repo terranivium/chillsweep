@@ -27,7 +27,7 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
         let name = fsutil::file_name(d);
         !ctx.rules.is_system_name(&name)
             && !ctx.rules.is_generic_name(&name)
-            && !ctx.is_protected(d)
+            && ctx.may_remove(d, false)
             && !ctx.is_owned(d)
             && !taken.covers(d)
     });

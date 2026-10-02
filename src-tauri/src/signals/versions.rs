@@ -30,7 +30,7 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     let mut out = Vec::new();
     for (root, depth) in ctx.roots.version_roots() {
         fsutil::walk_dirs(&root, depth, |dir, d| {
-            if d == 1 && (ctx.rules.is_system_name(&fsutil::file_name(dir)) || ctx.is_protected(dir)) {
+            if d == 1 && (ctx.rules.is_system_name(&fsutil::file_name(dir)) || !ctx.may_remove(dir, false)) {
                 return false;
             }
             if taken.covers(dir) {

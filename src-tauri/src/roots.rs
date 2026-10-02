@@ -36,6 +36,7 @@ fn env_path(key: &str) -> Option<PathBuf> {
     std::env::var_os(key).map(PathBuf::from).filter(|p| p.is_dir())
 }
 
+#[cfg(target_os = "macos")]
 fn existing(p: PathBuf) -> Option<PathBuf> {
     p.is_dir().then_some(p)
 }

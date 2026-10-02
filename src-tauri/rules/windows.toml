@@ -109,7 +109,7 @@ exe_stopwords = [
 
 # git-ignored folders in a repo that are pure build output (rebuilt by the project's build).
 build_dirs = [
-  'Library', 'Temp', 'Logs', 'Intermediate', 'Saved', 'DerivedDataCache', 'Binaries', '.godot',
+  'Intermediate', 'DerivedDataCache', '.godot',
   'dist', 'build', 'out', 'target', '.next', '.nuxt', '.svelte-kit', '.output', '.turbo',
   '.parcel-cache', '.cache', 'coverage', '.pytest_cache', '__pycache__', '.mypy_cache',
   '.ruff_cache', 'obj', 'bin', '.gradle', 'cmake-build-debug', 'cmake-build-release',
@@ -793,8 +793,6 @@ paths = [
   '%USERPROFILE%\.bun\install\cache',
   '%LOCALAPPDATA%\Cypress\Cache',
   '%LOCALAPPDATA%\puppeteer',
-  '%LOCALAPPDATA%\electron\Cache',
-  '%LOCALAPPDATA%\electron-builder\Cache',
   '%LOCALAPPDATA%\node-gyp\Cache',
 ]
 tier = 'safe'

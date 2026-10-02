@@ -294,4 +294,41 @@ mod tests {
             }
         }
     }
+
+    /// `build_dirs` makes any git-ignored folder of that name Safe, in any repo the projects
+    /// signal didn't recognise. A part some project kind keeps as the user's call — Unreal's
+    /// `Saved` holds autosaves — would be promoted to Safe whenever its marker went unseen.
+    #[test]
+    fn build_dirs_never_overrule_a_project_kind() {
+        for (name, text, _) in ALL {
+            let r = Rules::parse(text).unwrap();
+            for kind in &r.project_kind {
+                for part in kind.regenerable.iter().filter(|p| p.tier != RuleTier::Safe) {
+                    assert!(
+                        !r.build_dirs.iter().any(|b| b.eq_ignore_ascii_case(&part.name)),
+                        "{name}: build_dirs calls {:?} safe, but {} keeps it as the user's call",
+                        part.name,
+                        kind.id
+                    );
+                }
+            }
+        }
+    }
+
+    /// Two rules claiming the same folder report it twice, and the totals count its size twice.
+    #[test]
+    fn no_path_belongs_to_two_rules() {
+        for (name, text, _) in ALL {
+            let r = Rules::parse(text).unwrap();
+            let mut seen: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+            for rule in &r.rule {
+                for p in &rule.paths {
+                    let key = p.to_lowercase().replace('\\', "/");
+                    if let Some(other) = seen.insert(key, &rule.id) {
+                        assert_eq!(other, rule.id, "{name}: {p} is claimed by both {other} and {}", rule.id);
+                    }
+                }
+            }
+        }
+    }
 }

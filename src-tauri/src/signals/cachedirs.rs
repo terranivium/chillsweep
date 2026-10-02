@@ -24,7 +24,7 @@ fn nested_caches(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
         .app_data_roots()
         .iter()
         .flat_map(|r| fsutil::child_dirs(r))
-        .filter(|d| !ctx.rules.is_system_name(&fsutil::file_name(d)) && !ctx.is_protected(d) && !taken.covers(d))
+        .filter(|d| !ctx.rules.is_system_name(&fsutil::file_name(d)) && ctx.may_remove(d, false) && !taken.covers(d))
         .collect();
 
     apps.par_iter()
@@ -79,7 +79,7 @@ fn whole_cache_dirs(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
         .par_iter()
         .filter_map(|dir| {
             let name = fsutil::file_name(dir);
-            if ctx.rules.is_system_name(&name) || ctx.is_protected(dir) || taken.covers(dir) || ctx.is_owned(dir) {
+            if ctx.rules.is_system_name(&name) || !ctx.may_remove(dir, false) || taken.covers(dir) || ctx.is_owned(dir) {
                 return None;
             }
             // The owner has to be here *now*. An installer receipt would prove only that

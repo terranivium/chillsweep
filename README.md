@@ -2,13 +2,18 @@
 
 # ChillSweep
 
-A Windows cleanup app that finds what uninstalled apps, caches, dev projects and games left behind, and explains each item before you remove it.
+A cleanup app for Windows and macOS that finds what uninstalled apps, caches, dev projects and games left behind, and explains each item before you remove it.
 
-**Download:** [ChillSweep-Setup.exe](https://github.com/terranivium/chillsweep/releases/latest/download/ChillSweep-Setup.exe) (Windows 10/11). Each [release](https://github.com/terranivium/chillsweep/releases) lists its SHA-256 and what's new. The installer isn't code-signed yet, so SmartScreen asks you to confirm on first run.
+**Download:**
+
+- **Windows 10/11:** [ChillSweep-Setup.exe](https://github.com/terranivium/chillsweep/releases/latest/download/ChillSweep-Setup.exe). The installer isn't code-signed yet, so SmartScreen asks you to confirm on first run.
+- **macOS 11 or later** (Apple silicon and Intel): [ChillSweep.dmg](https://github.com/terranivium/chillsweep/releases/latest/download/ChillSweep.dmg). Signed and notarized.
+
+Each [release](https://github.com/terranivium/chillsweep/releases) lists its SHA-256 checksums and what's new.
 
 ![ChillSweep after a scan: 35.8 GB found, split into Safe to clear, Leftovers and Your call](docs/screenshot.png)
 
-Most cleaners work from a fixed list of junk locations. ChillSweep checks your user folders against what is actually installed: the registry's installed programs and publishers, Start menu and desktop shortcuts, running programs, program files, Store apps and Steam libraries. That lets it spot things like:
+Most cleaners work from a fixed list of junk locations. ChillSweep checks your user folders against what is actually installed: on Windows, the registry's installed programs and publishers, Start menu and desktop shortcuts, program files and Store apps; on macOS, app bundles, installer receipts and login items; and on both, running programs and Steam libraries. That lets it spot things like:
 
 - app data from programs you've uninstalled ("Docker Desktop isn't installed")
 - config files pointing at folders that no longer exist ("environments.txt points to C:\…\miniconda3, which no longer exists")
@@ -23,14 +28,14 @@ Every finding lands in a tier (**Safe to clear**, **Leftovers**, **Your call**) 
 
 ## Safety
 
-- Scanning only reads files and the registry. It never launches other programs.
+- Scanning only reads (files, plus the registry on Windows). It never launches other programs.
 - Protected locations (`.ssh`, Documents, browser profiles, password managers, …) are never flagged by the general signals.
 - Nothing is selected by default, and removal needs a confirmation.
 - Only items from the last scan can be removed, and each is re-checked right before removal (still exists, not protected, not in use by a running program).
 - A signal that can show you exactly what something is — a Pro Tools session file sitting beside the cache it wants to clear — may offer items inside a protected folder. Everything else is still refused there. A shorter list (keys, keychains, cloud sync, password managers, sandboxed app data) is refused no matter what.
-- Project folders from creative tools and game engines are recognised by their project file, so they're never mistaken for junk, and only the parts the tool rebuilds by itself are offered.
-- Items go to the Recycle Bin with an Undo button. Only "Safe to clear" items can optionally be deleted permanently.
-- Every removal is logged to `%LOCALAPPDATA%\ChillSweep\history.jsonl`.
+- Project folders from creative tools and game engines are recognised by their project file, so they're never mistaken for junk. The parts the tool rebuilds by itself are offered as safe to clear; whole projects that were never used, or not opened in over a year, are only ever offered as your call.
+- Items go to the Recycle Bin with an Undo button on Windows, or to the Trash with a Show in Trash button on macOS. Only "Safe to clear" items can optionally be deleted permanently.
+- Every removal is logged to `%LOCALAPPDATA%\ChillSweep\history.jsonl` on Windows, or `~/Library/Application Support/ChillSweep/history.jsonl` on macOS.
 - The only thing ChillSweep fetches from the internet is its update check: on startup it reads `latest.json` from this repo's [releases](https://github.com/terranivium/chillsweep/releases). Updates are signed and only install when you choose to.
 
 ## Development
@@ -43,7 +48,8 @@ npm run tauri dev                                # run the app
 cd src-tauri && cargo test --lib                 # unit tests
 cd src-tauri && cargo run --example scan         # command-line scan (add -- --json for raw output)
 npm run notices                                  # regenerate src/third-party-notices.txt after dependency changes
-npm run build                                    # Windows installer, versioned 1.{commit count}.0
+npm test                                         # release-pipeline tests
+npm run build                                    # installer for this OS, versioned 1.{commit count}.0
 npm run release                                  # build, sign and upload a draft release (see RELEASING.md)
 ```
 

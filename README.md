@@ -27,6 +27,8 @@ Every finding lands in a tier (**Safe to clear**, **Leftovers**, **Your call**) 
 - Protected locations (`.ssh`, Documents, browser profiles, password managers, …) are never flagged by the general signals.
 - Nothing is selected by default, and removal needs a confirmation.
 - Only items from the last scan can be removed, and each is re-checked right before removal (still exists, not protected, not in use by a running program).
+- A signal that can show you exactly what something is — a Pro Tools session file sitting beside the cache it wants to clear — may offer items inside a protected folder. Everything else is still refused there. A shorter list (keys, keychains, cloud sync, password managers, sandboxed app data) is refused no matter what.
+- Project folders from creative tools and game engines are recognised by their project file, so they're never mistaken for junk, and only the parts the tool rebuilds by itself are offered.
 - Items go to the Recycle Bin with an Undo button. Only "Safe to clear" items can optionally be deleted permanently.
 - Every removal is logged to `%LOCALAPPDATA%\ChillSweep\history.jsonl`.
 - The only thing ChillSweep fetches from the internet is its update check: on startup it reads `latest.json` from this repo's [releases](https://github.com/terranivium/chillsweep/releases). Updates are signed and only install when you choose to.
@@ -52,7 +54,7 @@ Code layout:
 - `src-tauri/src/inventory/`: what's installed (registry, shortcuts, processes, program files, Steam)
 - `src-tauri/src/signals/`: one file per kind of clutter; each returns findings with evidence
 - `src-tauri/src/clean.rs`: removal, undo and history
-- `src-tauri/rules/default.toml`: protected paths and the knowledge base
+- `src-tauri/rules/windows.toml`, `src-tauri/rules/macos.toml`: protected paths and the knowledge base, one file per platform
 - `src/`: the UI (plain HTML, CSS and JavaScript)
 - `build-scripts/`: versioning, the release pipeline and the changelog bake
 

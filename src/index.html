@@ -37,8 +37,9 @@
     <main>
       <section id="intro" class="intro">
         <p>
-          ChillSweep checks your user folders against what is actually installed: programs, shortcuts,
-          running apps and Steam games. Then it explains what each item is and what happens if you remove it.
+          ChillSweep checks your user folders against what is actually installed — your apps, what's set to
+          launch, what's running now, and your Steam games. Then it explains what each item is and what
+          happens if you remove it.
         </p>
         <p class="muted">Scanning only reads. Nothing is removed until you choose items and confirm.</p>
       </section>
@@ -63,6 +64,7 @@
           <button id="undo" class="secondary" type="button" hidden>
             <i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i><span class="label">Undo</span>
           </button>
+          <button id="reveal-bin" class="link" type="button" hidden></button>
         </div>
         <ul id="outcome-problems" class="problems"></ul>
       </section>
@@ -74,7 +76,10 @@
 
     <div id="selection-bar" class="selection-bar" hidden>
       <span id="selection-text"></span>
-      <label class="toggle" title="Safe-to-clear items rebuild themselves, so they skip the Recycle Bin. Everything else always goes to the Recycle Bin.">
+      <!-- This title and the About text below are written platform-neutrally and then replaced by
+           applyPlatform() in main.js, which knows whether this build says Recycle Bin or Trash.
+           Neutral defaults mean no frame of the wrong wording before the script runs. -->
+      <label class="toggle" title="Safe-to-clear items rebuild themselves, so they can skip the bin. Everything else always goes there first.">
         <input id="permanent" type="checkbox" checked />
         Delete safe-to-clear items permanently
       </label>
@@ -117,10 +122,12 @@
       <div id="whats-new" class="whats-new"></div>
 
       <h3 class="about-heading">How it works</h3>
-      <p class="about-text">
-        A scan only reads your folders and the registry; it never changes anything or starts other programs.
-        When you clean up, items go to the Recycle Bin (and can be undone), except safe-to-clear caches if you
-        choose to delete those permanently.
+      <p class="about-text" id="about-scan">
+        A scan only reads; it never changes anything or starts other programs.
+      </p>
+      <p class="about-text" id="about-clean">
+        When you clean up, items can be put back afterwards, except safe-to-clear caches if you choose to
+        delete those permanently.
       </p>
 
       <h3 class="about-heading">Legal</h3>

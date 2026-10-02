@@ -1,8 +1,12 @@
 const { invoke } = window.__TAURI__.core;
 const { revealItemInDir } = window.__TAURI__.opener;
 
+// What this OS calls things. Filled in from `app_info` before the first render, so no part of
+// the page has to guess the platform. The defaults keep the UI readable if that call ever fails.
+const OS = { platform: "", binName: "the Recycle Bin or Trash", fileManager: "your file manager" };
+
 const TIERS = {
-  safe: { icon: "ph-recycle", label: "Safe to clear", blurb: "Caches and junk that rebuild themselves." },
+  safe: { icon: "ph-broom", label: "Safe to clear", blurb: "Caches and junk that rebuild themselves." },
   leftover: { icon: "ph-package", label: "Leftovers", blurb: "Left behind by apps and games that are no longer installed." },
   your_call: { icon: "ph-question", label: "Your call", blurb: "Removable, but only you know if you still want these." },
 };
@@ -15,6 +19,7 @@ const CATEGORY_LABELS = {
   dev: "Dev",
   games: "Games",
   downloads: "Downloads",
+  projects: "Projects",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -108,9 +113,9 @@ function renderFinding(f) {
     const path = el("span", "path", it.path);
     path.title = it.path;
     const meta = el("span", "item-size", it.is_dir ? `${formatSize(it.bytes)} · ${it.files.toLocaleString()} files` : formatSize(it.bytes));
-    const reveal = el("button", "link", "Show in Explorer");
+    const reveal = el("button", "link", `Show in ${OS.fileManager}`);
     reveal.type = "button";
-    reveal.addEventListener("click", () => revealItemInDir(it.path).catch((e) => setStatus(`Couldn't open Explorer: ${e}`)));
+    reveal.addEventListener("click", () => revealItemInDir(it.path).catch((e) => setStatus(`Couldn't open ${OS.fileManager}: ${e}`)));
     li.append(path, meta, reveal);
     items.append(li);
   }
@@ -154,8 +159,7 @@ function renderFooter(report) {
     el(
       "p",
       null,
-      `Checked against ${inv.installed_programs} installed programs, ${inv.shortcuts} shortcuts, ${inv.running_processes} running programs, ` +
-        `${inv.program_files_seen} Program Files folders and ${inv.steam_games} Steam games in ${(report.duration_ms / 1000).toFixed(1)}s.`,
+      `${inv.summary_text} in ${(report.duration_ms / 1000).toFixed(1)}s.`,
     ),
     ...report.warnings.map((w) => el("p", "muted", w)),
   );
@@ -226,7 +230,7 @@ function confirmClean() {
   const chosen = selectedFindings();
   const groups = [
     { label: "Deleted permanently", note: "Frees space now. Can't be undone.", items: chosen.filter((f) => permanent && f.tier === "safe") },
-    { label: "Moved to the Recycle Bin", note: "You can undo this, or restore items from the Recycle Bin later.", items: chosen.filter((f) => !(permanent && f.tier === "safe")) },
+    { label: `Moved to the ${OS.binName}`, note: `You can put these back from the ${OS.binName} afterwards.`, items: chosen.filter((f) => !(permanent && f.tier === "safe")) },
   ];
   const container = $("#confirm-groups");
   container.replaceChildren();
@@ -261,10 +265,31 @@ async function runClean() {
   await scan({ keepOutcome: true });
 }
 
+/// Teach the page what this OS calls things, and fix up the sentences written in the HTML.
+function applyPlatform(info) {
+  OS.platform = info.platform ?? "";
+  OS.binName = info.bin_name ?? OS.binName;
+  OS.fileManager = info.file_manager ?? OS.fileManager;
+  if (OS.platform) document.documentElement.dataset.platform = OS.platform;
+  const inventory = OS.platform === "windows" ? "your folders and the registry" : "your folders and the apps you have installed";
+  setText("about-scan", `A scan only reads ${inventory}; it never changes anything or starts other programs.`);
+  setText(
+    "about-clean",
+    `When you clean up, items go to the ${OS.binName}, except safe-to-clear caches if you choose to delete those permanently.`,
+  );
+  const toggle = $("#permanent")?.closest(".toggle");
+  if (toggle) toggle.title = `Safe-to-clear items rebuild themselves, so they skip the ${OS.binName}. Everything else always goes to the ${OS.binName}.`;
+}
+
+function setText(id, text) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = text;
+}
+
 function showOutcome(result) {
   const parts = [];
   if (result.freed_bytes > 0) parts.push(`Freed ${formatSize(result.freed_bytes)}.`);
-  if (result.recycled_bytes > 0) parts.push(`Moved ${formatSize(result.recycled_bytes)} to the Recycle Bin (empty it to free the space).`);
+  if (result.recycled_bytes > 0) parts.push(`Moved ${formatSize(result.recycled_bytes)} to the ${OS.binName} (empty it to free the space).`);
   if (parts.length === 0) parts.push("Nothing was removed.");
   $("#outcome-text").textContent = parts.join(" ");
 
@@ -276,11 +301,19 @@ function showOutcome(result) {
     problems.append(li);
   }
 
+  // `recycle_bin` is the wire value of the method on both platforms; only the label differs.
   const recycled = result.outcomes.filter((o) => o.method === "recycle_bin" && !o.error).length;
   const undo = $("#undo");
-  undo.hidden = recycled === 0;
+  const reveal = $("#reveal-bin");
+  // Where the backend gave us somewhere to reveal, it is telling us it cannot undo. Offer the
+  // user the next best thing instead of a button that would fail.
+  const canUndo = recycled > 0 && !result.reveal_dir;
+  undo.hidden = !canUndo;
   undo.disabled = false;
-  undo.querySelector(".label").textContent = `Undo (put back ${plural(recycled, "item")})`;
+  if (canUndo) undo.querySelector(".label").textContent = `Undo (put back ${plural(recycled, "item")})`;
+  reveal.hidden = !(recycled > 0 && result.reveal_dir);
+  reveal.textContent = `Show in ${OS.binName}`;
+  reveal.onclick = () => revealItemInDir(result.reveal_dir).catch((e) => setStatus(`Couldn't open ${OS.fileManager}: ${e}`));
   $("#outcome").hidden = false;
 }
 
@@ -291,7 +324,7 @@ async function undoLast() {
     const result = await invoke("undo_last");
     const problems = $("#outcome-problems");
     problems.replaceChildren(...result.failed.map((f) => el("li", null, `${f.path}: ${f.error}`)));
-    $("#outcome-text").textContent = `Put back ${plural(result.restored.length, "item")} from the Recycle Bin.`;
+    $("#outcome-text").textContent = `Put back ${plural(result.restored.length, "item")} from the ${OS.binName}.`;
     undo.hidden = true;
   } catch (e) {
     setStatus(`Undo failed: ${e}`);
@@ -451,6 +484,10 @@ async function openNotices() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  // Before anything renders: every label that names the bin or the file manager reads from OS,
+  // and the defaults are deliberately vague ("the Recycle Bin or Trash"). Leaving this to
+  // openAbout() meant the whole UI showed those placeholders until someone opened About.
+  invoke("app_info").then(applyPlatform).catch(() => {});
   $("#about-open").addEventListener("click", () => openAbout());
   $("#update-notes").addEventListener("click", () => openAbout({ whatsNew: true }));
   $("#update-install").addEventListener("click", installUpdate);

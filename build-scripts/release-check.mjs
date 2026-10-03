@@ -89,7 +89,14 @@ function checkMacSigning(byName) {
     notes.push("syspolicy_check unavailable; stapler was the only notarization test");
   } else {
     const ok = sys.status === 0;
-    console.log(`  ${ok ? "ok" : "--"}  ${"syspolicy_check".padEnd(26)} ${ok ? "ready for distribution" : (sys.stdout || sys.stderr || "").trim().split("\n")[0]}`);
+    // Its output starts with a separator rule and a header, so the first line says nothing.
+    // Pick the first line that names an actual problem.
+    const why =
+      (sys.stdout || sys.stderr || "")
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => /[a-z]/.test(l) && !/^-+$/.test(l) && !/^={2,}/.test(l)) ?? "not ready for distribution";
+    console.log(`  ${ok ? "ok" : "--"}  ${"syspolicy_check".padEnd(26)} ${ok ? "ready for distribution" : why.slice(0, 80)}`);
     if (!ok) fail(`syspolicy_check says ${art.download} is not ready for distribution`);
   }
 }

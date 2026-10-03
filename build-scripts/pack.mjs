@@ -8,14 +8,16 @@
 // updater compares. Done in a wrapper rather than an inline env var so it works the same from
 // PowerShell, cmd and bash.
 //
-// --release adds bundle.createUpdaterArtifacts, which makes Tauri write ChillSweep_…-setup.exe.sig
-// next to the installer. That needs TAURI_SIGNING_PRIVATE_KEY (and its password) from release.env,
-// so it's only switched on for releases.
+// --release adds bundle.createUpdaterArtifacts, which makes Tauri write the .sig next to the
+// artifact the updater fetches. That needs TAURI_SIGNING_PRIVATE_KEY (and its password) from
+// release.env, so it's only switched on for releases.
+//
+// On macOS a release also notarizes and staples the DMG afterwards — see notarizeDmg below.
 
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { loadReleaseEnv } from "./github.mjs";
+import { mine, loadReleaseEnv } from "./github.mjs";
 import { git, root, version } from "./version.mjs";
 
 const release = process.argv.includes("--release");
@@ -74,4 +76,47 @@ const result = spawnSync(process.execPath, [cli, ...args], {
   stdio: "inherit",
   cwd: root,
 });
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+if (release && process.platform === "darwin") notarizeDmg(config.version);
+
+/**
+ * Notarize and staple the DMG.
+ *
+ * Tauri notarizes the `.app` and stops there: the disk image it then builds around that app is
+ * signed but carries no notarization ticket of its own. Gatekeeper checks the file people
+ * actually download, so an unstapled DMG warns on first open — and `release:check` refuses to
+ * publish one, which is how this was caught rather than shipped.
+ *
+ * Order matters. Stapling rewrites the DMG in place, so it has to happen here, before
+ * publish.mjs stages and uploads it and before release-notes.mjs hashes it. Otherwise the
+ * published file and its checksum would both describe the unstapled version.
+ */
+function notarizeDmg(ver) {
+  const art = mine();
+  const dmg = join(root, "src-tauri", "target", "universal-apple-darwin", "release", ...art.bundleDir, art.built(ver));
+  const run = (cmd, cmdArgs) => spawnSync(cmd, cmdArgs, { stdio: "inherit", cwd: root });
+
+  console.log(`pack: notarizing ${art.built(ver)} — Tauri staples the .app but not the disk image`);
+  const submit = run("xcrun", [
+    "notarytool",
+    "submit",
+    dmg,
+    "--apple-id",
+    process.env.APPLE_ID,
+    "--password",
+    process.env.APPLE_PASSWORD,
+    "--team-id",
+    process.env.APPLE_TEAM_ID,
+    "--wait",
+  ]);
+  if (submit.status !== 0) {
+    console.error("pack: notarizing the DMG failed. The .app is already notarized, so re-running only redoes this step.");
+    process.exit(submit.status ?? 1);
+  }
+  if (run("xcrun", ["stapler", "staple", dmg]).status !== 0) {
+    console.error("pack: stapling the DMG failed — Gatekeeper would warn on the downloaded file.");
+    process.exit(1);
+  }
+  console.log("pack: DMG notarized and stapled");
+}

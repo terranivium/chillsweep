@@ -25,7 +25,11 @@ dist-ssr
 
 # Release secrets (see release.env.example) and generated release notes
 release.env
+# Any copy of it too: a release.env.bak left beside it holds the same secrets and only the
+# exact name was ignored, so `git add -A` would have committed it.
+release.env.*
+!release.env.example
 src/changelog.json
-# Updater signing keys belong in %USERPROFILE%\.tauri\, never in the repo
+# Updater signing keys belong outside the repo, and never in it
 *.key
 *.key.pub

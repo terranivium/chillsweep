@@ -1,6 +1,8 @@
 //! Command-line scan for development: `cargo run --example scan` prints a readable report, `-- --json`
-//! the raw report. An example rather than a [[bin]] so the installer doesn't ship it.
+//! the raw report, `-- --progress` the progress the app's bar is driven by. An example rather than
+//! a [[bin]] so the installer doesn't ship it.
 
+use chillsweep_lib::progress::{self, Reporter, ScanProgress};
 use chillsweep_lib::report::{Category, Finding, Tier};
 use chillsweep_lib::scan;
 
@@ -49,7 +51,36 @@ fn main() {
         print_rule_coverage();
         return;
     }
-    let report = scan::run();
+    // `--progress` is how the stage order, labels and timings get checked without the app: the
+    // same reporter the window uses, printing to stderr instead of the page.
+    let report = if std::env::args().any(|a| a == "--progress") {
+        let reporter = Reporter::new(
+            progress::scan_stages(),
+            std::sync::Arc::new({
+                let state = std::sync::Mutex::new((std::time::Instant::now(), String::new()));
+                move |p: &ScanProgress| {
+                    let mut st = state.lock().unwrap();
+                    if st.1 != p.stage {
+                        if !st.1.is_empty() {
+                            eprintln!("        ^ {} took {} ms", st.1, st.0.elapsed().as_millis());
+                        }
+                        *st = (std::time::Instant::now(), p.stage.to_string());
+                    }
+                    eprintln!(
+                        "[{:>3.0}%] {:>2}/{} {:<46} {}",
+                        p.percent,
+                        p.step,
+                        p.steps,
+                        p.label,
+                        p.path.as_deref().unwrap_or("")
+                    );
+                }
+            }),
+        );
+        scan::run_with_progress(reporter)
+    } else {
+        scan::run()
+    };
     if std::env::args().any(|a| a == "--json") {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
         return;

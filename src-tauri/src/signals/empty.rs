@@ -1,5 +1,7 @@
 //! Folders with nothing inside.
 
+use rayon::prelude::*;
+
 use super::{finding, item, Taken};
 use crate::fsutil;
 use crate::report::{Category, Confidence, Finding, Tier};
@@ -24,15 +26,20 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     let mut f = finding("empty-folders", "Empty folders", Tier::Safe, Category::Stray, Confidence::High);
     f.what = Some("Folders with no files inside, usually left behind by uninstalled apps.".into());
     f.if_deleted = Some("Nothing. An app that still uses one recreates it when it runs.".into());
-    for dir in dirs {
-        if !ctx.may_remove(&dir, false) || taken.covers(&dir) {
-            continue;
-        }
-        let u = fsutil::usage(&dir);
-        if u.files == 0 {
-            f.items.push(item(&dir, &u));
-        }
-    }
+    // In parallel, like the other signals, and asking only whether each folder holds a file
+    // rather than measuring everything in it. `collect` keeps the order of `dirs`, which the
+    // evidence sentence below reads in.
+    ctx.progress.units(dirs.len());
+    f.items = dirs
+        .par_iter()
+        .filter_map(|dir| {
+            ctx.progress.examining(dir);
+            if !ctx.may_remove(dir, false) || taken.covers(dir) {
+                return None;
+            }
+            fsutil::empty_tree(dir).map(|u| item(dir, &u))
+        })
+        .collect();
     if f.items.is_empty() {
         return Vec::new();
     }

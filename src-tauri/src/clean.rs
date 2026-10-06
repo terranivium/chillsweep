@@ -39,6 +39,16 @@ pub struct Outcome {
     pub method: Method,
     /// Why it was skipped or what went wrong. None means it fully worked.
     pub error: Option<String>,
+    /// Nothing is left at `path`: it was removed, or something else had already removed it.
+    ///
+    /// Kept separate from `remaining_bytes` because an empty folder and a 0-byte stray file are
+    /// real items whose size is legitimately 0 — "no bytes left" and "gone" are different facts,
+    /// and `reconcile` needs the second one.
+    pub gone: bool,
+    /// What is still on disk at `path` afterwards: the full size when nothing went, and the
+    /// measured remainder when files were in use and had to be left behind.
+    pub remaining_bytes: u64,
+    pub remaining_files: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -67,6 +77,24 @@ impl CleanResult {
     }
 }
 
+/// One item finished, while a clean is still running.
+///
+/// Unlike a scan, a clean knows its total before it starts, so this is a real fraction.
+#[derive(Debug, Clone, Serialize)]
+pub struct CleanProgress<'a> {
+    /// Items finished so far, counting this one.
+    pub done: usize,
+    pub total: usize,
+    pub outcome: &'a Outcome,
+    /// Running totals, the same ones `CleanResult` ends up with.
+    pub freed_bytes: u64,
+    pub recycled_bytes: u64,
+    /// This was the finding's last item, so the page can retire its row.
+    pub finding_done: bool,
+    /// Something in this finding was skipped or failed, so the row should stay and say why.
+    pub finding_failed: bool,
+}
+
 /// How items are moved to the Recycle Bin / Trash.
 ///
 /// On macOS the `trash` crate defaults to `DeleteMethod::Finder`, which runs
@@ -93,24 +121,55 @@ pub fn guard_ctx() -> Ctx {
 
 /// Remove the items of the given findings. Safe-tier items are deleted permanently when
 /// `permanent_safe` is set; everything else goes to the Recycle Bin.
-pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx: &Ctx) -> CleanResult {
+///
+/// `on` is told about every item as it finishes, so the page can retire rows and count up as the
+/// work happens rather than all at once at the end.
+pub fn clean(
+    report: &Report,
+    finding_ids: &[String],
+    permanent_safe: bool,
+    ctx: &Ctx,
+    on: &dyn Fn(&CleanProgress),
+) -> CleanResult {
     let mut result = CleanResult { started_at: fsutil::now(), ..CleanResult::default() };
     let bin = trash_ctx();
+    // Known before the first delete: one unit per item, plus one for each id that isn't in the
+    // report at all, since those are reported too.
+    let total: usize = finding_ids
+        .iter()
+        .map(|id| report.findings.iter().find(|f| &f.id == id).map_or(1, |f| f.items.len()))
+        .sum();
+    let mut done = 0;
     for id in finding_ids {
         let Some(finding) = report.findings.iter().find(|f| &f.id == id) else {
-            result.outcomes.push(Outcome {
+            let outcome = Outcome {
                 finding_id: id.clone(),
                 title: String::new(),
                 path: String::new(),
                 bytes: 0,
                 method: Method::Skipped,
                 error: Some("Not in the last scan. Scan again and retry.".into()),
-            });
+                gone: false,
+                remaining_bytes: 0,
+                remaining_files: 0,
+            };
             result.skipped += 1;
+            done += 1;
+            on(&CleanProgress {
+                done,
+                total,
+                outcome: &outcome,
+                freed_bytes: result.freed_bytes,
+                recycled_bytes: result.recycled_bytes,
+                finding_done: true,
+                finding_failed: true,
+            });
+            result.outcomes.push(outcome);
             continue;
         };
         let method = if finding.tier == Tier::Safe && permanent_safe { Method::Permanent } else { Method::RecycleBin };
-        for item in &finding.items {
+        let mut failed = false;
+        for (i, item) in finding.items.iter().enumerate() {
             let path = Path::new(&item.path);
             let mut outcome = Outcome {
                 finding_id: finding.id.clone(),
@@ -119,20 +178,39 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
                 bytes: item.bytes,
                 method,
                 error: None,
+                // Nothing has been touched yet, so everything is still there.
+                gone: false,
+                remaining_bytes: item.bytes,
+                remaining_files: item.files,
             };
             if let Some(reason) = refuse_reason(path, ctx, finding.vouched) {
                 outcome.method = Method::Skipped;
                 outcome.error = Some(reason.into());
+                // One of the refusals is "it no longer exists". Nothing is left to show, so say
+                // so: otherwise the row sits there claiming its old size until the next scan.
+                if fs::symlink_metadata(path).is_err() {
+                    outcome.gone = true;
+                    outcome.remaining_bytes = 0;
+                    outcome.remaining_files = 0;
+                }
             } else {
                 match method {
                     Method::RecycleBin => match bin.delete(path) {
-                        Ok(()) => result.recycled_bytes += item.bytes,
+                        Ok(()) => {
+                            result.recycled_bytes += item.bytes;
+                            outcome.gone = true;
+                            outcome.remaining_bytes = 0;
+                            outcome.remaining_files = 0;
+                        }
                         Err(e) => outcome.error = Some(format!("Couldn't move it to the {BIN_NAME}: {e}")),
                     },
                     Method::Permanent => {
                         let failures = remove_tree(path);
-                        let left = if path.exists() { fsutil::usage(path).bytes } else { 0 };
-                        result.freed_bytes += item.bytes.saturating_sub(left);
+                        let left = if path.exists() { fsutil::usage(path) } else { fsutil::Usage::default() };
+                        result.freed_bytes += item.bytes.saturating_sub(left.bytes);
+                        outcome.gone = !path.exists();
+                        outcome.remaining_bytes = left.bytes;
+                        outcome.remaining_files = left.files;
                         if failures > 0 {
                             outcome.error = Some(format!("{failures} files or folders were in use and were left behind."));
                         }
@@ -143,6 +221,19 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
             if outcome.method == Method::Skipped {
                 result.skipped += 1;
             }
+            if outcome.error.is_some() {
+                failed = true;
+            }
+            done += 1;
+            on(&CleanProgress {
+                done,
+                total,
+                outcome: &outcome,
+                freed_bytes: result.freed_bytes,
+                recycled_bytes: result.recycled_bytes,
+                finding_done: i + 1 == finding.items.len(),
+                finding_failed: failed,
+            });
             result.outcomes.push(outcome);
         }
     }
@@ -156,6 +247,36 @@ pub fn clean(report: &Report, finding_ids: &[String], permanent_safe: bool, ctx:
         result.reveal_dir = trash_reveal_target(ctx);
     }
     result
+}
+
+/// Bring a report up to date after a clean, instead of scanning again.
+///
+/// `scan::drop_nested` guarantees that no finding's item sits inside another finding's item, so
+/// removing one finding's items cannot change what any other finding holds or how big it is. That
+/// makes this pure bookkeeping — no filesystem walk at all where everything worked.
+///
+/// The one thing a fresh scan would notice and this cannot: a folder that has only just become
+/// empty because what was inside it was removed. That is a new finding, not a correction to an
+/// existing one, and the Scan button is right there.
+pub fn reconcile(report: &mut Report, outcomes: &[Outcome]) {
+    for o in outcomes {
+        let Some(finding) = report.findings.iter_mut().find(|f| f.id == o.finding_id) else { continue };
+        if o.gone {
+            finding.items.retain(|i| i.path != o.path);
+        } else if let Some(item) = finding.items.iter_mut().find(|i| i.path == o.path) {
+            // Still there, in whole or in part. Both numbers, because the page shows them
+            // together: a corrected size beside a stale file count reads as a bug.
+            item.bytes = o.remaining_bytes;
+            item.files = o.remaining_files;
+        }
+    }
+    for finding in &mut report.findings {
+        finding.recompute_bytes();
+    }
+    report.findings.retain(|f| !f.items.is_empty());
+    let (totals, projects) = crate::scan::totals(&report.findings);
+    report.totals = totals;
+    report.projects = projects;
 }
 
 /// What to hand the page's "Show in Trash" action.
@@ -356,7 +477,7 @@ mod tests {
     #[test]
     fn rejects_ids_not_in_report() {
         let report = Report { findings: vec![], totals: vec![], projects: Default::default(), inventory: InventorySummary::default(), duration_ms: 0, warnings: vec![] };
-        let r = clean(&report, &["nope".into()], true, &ctx());
+        let r = clean(&report, &["nope".into()], true, &ctx(), &|_| {});
         assert_eq!(r.skipped, 1);
         assert_eq!(r.outcomes[0].method, Method::Skipped);
     }
@@ -365,7 +486,7 @@ mod tests {
     fn rejects_protected_paths() {
         // Inside ~/.ssh, and deliberately nonexistent so a bug could never touch real files.
         let path = Roots::detect().home.join(".ssh").join("chillsweep-test-does-not-exist");
-        let r = clean(&report_with(Tier::Leftover, &path), &["f1".into()], true, &ctx());
+        let r = clean(&report_with(Tier::Leftover, &path), &["f1".into()], true, &ctx(), &|_| {});
         assert_eq!(r.outcomes[0].method, Method::Skipped);
         // `.ssh` is on the absolute list, so it reports the stronger of the two refusals.
         assert_eq!(r.outcomes[0].error.as_deref(), Some("This location is off limits."));
@@ -389,7 +510,7 @@ mod tests {
     fn permanent_delete_removes_tree() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = fixture(tmp.path());
-        let r = clean(&report_with(Tier::Safe, &dir), &["f1".into()], true, &ctx());
+        let r = clean(&report_with(Tier::Safe, &dir), &["f1".into()], true, &ctx(), &|_| {});
         assert_eq!(r.outcomes[0].method, Method::Permanent);
         assert!(r.outcomes[0].error.is_none());
         assert_eq!(r.freed_bytes, 3072);
@@ -404,7 +525,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = fixture(tmp.path());
         let _lock = OpenOptions::new().read(true).share_mode(0).open(dir.join("a.bin")).unwrap();
-        let r = clean(&report_with(Tier::Safe, &dir), &["f1".into()], true, &ctx());
+        let r = clean(&report_with(Tier::Safe, &dir), &["f1".into()], true, &ctx(), &|_| {});
         assert!(r.outcomes[0].error.as_deref().unwrap().contains("in use"));
         assert!(dir.join("a.bin").exists());
         assert!(!dir.join("nested").exists());
@@ -416,7 +537,7 @@ mod tests {
     fn recycle_then_undo_restores() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = fixture(tmp.path());
-        let r = clean(&report_with(Tier::Leftover, &dir), &["f1".into()], true, &ctx());
+        let r = clean(&report_with(Tier::Leftover, &dir), &["f1".into()], true, &ctx(), &|_| {});
         assert_eq!(r.outcomes[0].method, Method::RecycleBin, "{:?}", r.outcomes[0].error);
         assert!(r.outcomes[0].error.is_none(), "{:?}", r.outcomes[0].error);
         assert!(!dir.exists());
@@ -429,9 +550,119 @@ mod tests {
     fn writes_history() {
         let tmp = tempfile::tempdir().unwrap();
         let report = Report { findings: vec![], totals: vec![], projects: Default::default(), inventory: InventorySummary::default(), duration_ms: 0, warnings: vec![] };
-        let r = clean(&report, &["x".into()], false, &ctx());
+        let r = clean(&report, &["x".into()], false, &ctx(), &|_| {});
         append_history(tmp.path(), &r).unwrap();
         let text = fs::read_to_string(tmp.path().join("history.jsonl")).unwrap();
         assert!(text.contains("\"method\":\"skipped\""));
     }
+
+    /// One finding with two items, so reconcile can be seen to keep what survived.
+    fn report_two(tier: Tier, a: &str, b: &str) -> Report {
+        let item = |path: &str, bytes: u64| Item { path: path.into(), bytes, files: 1, is_dir: true };
+        Report {
+            findings: vec![Finding {
+                id: "f1".into(),
+                title: "Test".into(),
+                tier,
+                category: Category::Cache,
+                confidence: Confidence::High,
+                what: None,
+                if_deleted: None,
+                evidence: vec![],
+                items: vec![item(a, 1000), item(b, 500)],
+                vouched: false,
+                bytes: 1500,
+                last_modified: None,
+            }],
+            totals: vec![],
+            projects: Default::default(),
+            inventory: InventorySummary::default(),
+            duration_ms: 0,
+            warnings: vec![],
+        }
+    }
+
+    fn outcome(path: &str, bytes: u64, remaining: u64, error: Option<&str>) -> Outcome {
+        Outcome {
+            finding_id: "f1".into(),
+            title: "Test".into(),
+            path: path.into(),
+            bytes,
+            method: if error.is_some() { Method::Skipped } else { Method::RecycleBin },
+            error: error.map(Into::into),
+            gone: remaining == 0 && error.is_none(),
+            remaining_bytes: remaining,
+            remaining_files: if remaining == 0 { 0 } else { 1 },
+        }
+    }
+
+    #[test]
+    fn reconcile_drops_what_went_and_resizes_what_stayed() {
+        let mut report = report_two(Tier::Safe, "/a", "/b");
+        // `/a` went entirely; `/b` was partly in use and 200 bytes of it are left.
+        reconcile(
+            &mut report,
+            &[outcome("/a", 1000, 0, None), outcome("/b", 500, 200, Some("In use."))],
+        );
+        assert_eq!(report.findings.len(), 1);
+        let f = &report.findings[0];
+        assert_eq!(f.items.iter().map(|i| i.path.as_str()).collect::<Vec<_>>(), ["/b"]);
+        assert_eq!(f.items[0].bytes, 200);
+        assert_eq!(f.items[0].files, 1, "the file count is corrected alongside the size");
+        // The finding's own total follows its items, and so do the tier totals.
+        assert_eq!(f.bytes, 200);
+        let safe = report.totals.iter().find(|t| t.tier == Tier::Safe).unwrap();
+        assert_eq!((safe.bytes, safe.count), (200, 1));
+    }
+
+    #[test]
+    fn reconcile_removes_a_finding_with_nothing_left() {
+        let mut report = report_two(Tier::Leftover, "/a", "/b");
+        reconcile(&mut report, &[outcome("/a", 1000, 0, None), outcome("/b", 500, 0, None)]);
+        assert!(report.findings.is_empty());
+        let leftover = report.totals.iter().find(|t| t.tier == Tier::Leftover).unwrap();
+        assert_eq!((leftover.bytes, leftover.count), (0, 0));
+    }
+
+    /// An empty folder and a 0-byte stray file are real items that are legitimately 0 bytes, so
+    /// "nothing left" cannot be read off the size. If removal fails for one, it has to stay.
+    #[test]
+    fn reconcile_keeps_a_zero_byte_item_that_could_not_be_removed() {
+        let mut report = report_two(Tier::Safe, "/a", "/b");
+        for f in &mut report.findings {
+            for i in &mut f.items {
+                i.bytes = 0;
+            }
+        }
+        let mut failed = outcome("/a", 0, 0, Some("In use."));
+        failed.gone = false;
+        reconcile(&mut report, &[failed]);
+        assert_eq!(report.findings.len(), 1, "an empty folder that stayed put must stay in the report");
+        assert!(report.findings[0].items.iter().any(|i| i.path == "/a"));
+    }
+
+    /// Something else removed it between the scan and the clean. Removal refuses, but the row
+    /// should still go: it is describing something that is not there.
+    #[test]
+    fn reconcile_drops_an_item_that_something_else_already_removed() {
+        let mut report = report_two(Tier::Safe, "/a", "/b");
+        let mut vanished = outcome("/a", 1000, 0, Some("It no longer exists."));
+        vanished.gone = true;
+        reconcile(&mut report, &[vanished]);
+        assert_eq!(report.findings[0].items.iter().map(|i| i.path.as_str()).collect::<Vec<_>>(), ["/b"]);
+        assert_eq!(report.findings[0].bytes, 500, "and its bytes stop counting towards the total");
+    }
+
+    /// A clean reports an id that was never in the report (the user cleaned twice over a stale
+    /// list). Reconcile must leave the report alone rather than panic or drop something.
+    #[test]
+    fn reconcile_ignores_an_outcome_for_an_unknown_finding() {
+        let mut report = report_two(Tier::Safe, "/a", "/b");
+        let mut stray = outcome("/a", 1000, 0, None);
+        stray.finding_id = "gone".into();
+        reconcile(&mut report, &[stray]);
+        assert_eq!(report.findings[0].items.len(), 2);
+        assert_eq!(report.findings[0].bytes, 1500);
+    }
+
 }

@@ -1,4 +1,5 @@
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 const { revealItemInDir } = window.__TAURI__.opener;
 
 // What this OS calls things. Filled in from `app_info` before the first render, so no part of
@@ -24,10 +25,14 @@ const CATEGORY_LABELS = {
 
 const $ = (sel) => document.querySelector(sel);
 
+/** The report on screen. Kept so the page can keep its totals in step as rows go. */
+let shown = null;
 /** Findings from the current report, by id. */
 let findings = new Map();
 /** Ids of findings the user ticked. */
 const selected = new Set();
+/** First error seen per finding during the clean in progress, for the row to show. */
+const cleanErrors = new Map();
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -56,6 +61,90 @@ function setStatus(text) {
   const status = $("#status");
   status.textContent = text;
   status.hidden = !text;
+}
+
+// ---------------------------------------------------------------------------
+// The status bar: what's selected when idle, live progress while working
+// ---------------------------------------------------------------------------
+
+/** Paths kept in the feed. Enough to read motion from, few enough to stay out of the way. */
+const FEED_LINES = 3;
+
+// The backend throttles to about sixteen updates a second; this folds whatever arrives into one
+// write per frame, so the bar and the feed never thrash layout.
+let pendingScan = null;
+let pendingClean = null;
+let frame = null;
+
+function setMode(mode) {
+  $("#statusbar").dataset.mode = mode;
+  document.body.classList.toggle("is-working", mode !== "idle");
+}
+
+function setBar(percent) {
+  const pct = Math.max(0, Math.min(100, percent));
+  // Through the style object, not a style attribute: the page's CSP has no 'unsafe-inline', and
+  // CSSOM isn't subject to it.
+  $("#sb-fill").style.width = `${pct}%`;
+  $("#sb-bar").setAttribute("aria-valuenow", Math.round(pct));
+}
+
+function feedPush(path) {
+  const feed = $("#sb-feed");
+  feed.append(el("span", null, path));
+  while (feed.childElementCount > FEED_LINES) feed.firstElementChild.remove();
+}
+
+function resetProgress(stage) {
+  pendingScan = null;
+  pendingClean = null;
+  $("#sb-feed").replaceChildren();
+  $("#sb-stage").textContent = stage;
+  $("#sb-count").textContent = "";
+  setBar(0);
+}
+
+function schedule() {
+  if (frame) return;
+  frame = requestAnimationFrame(() => {
+    frame = null;
+    if (pendingScan) {
+      paintScan(pendingScan);
+      pendingScan = null;
+    }
+    if (pendingClean) {
+      paintClean(pendingClean);
+      pendingClean = null;
+    }
+  });
+}
+
+function paintScan(p) {
+  setBar(p.percent);
+  $("#sb-stage").textContent = p.label;
+  const found = p.found > 0 ? ` · ${plural(p.found, "item")} so far, ${formatSize(p.bytes)}` : "";
+  $("#sb-count").textContent = `Step ${p.step} of ${p.steps}${found}`;
+  if (p.path) feedPush(p.path);
+}
+
+function paintClean(p) {
+  setBar(p.total > 0 ? (p.done / p.total) * 100 : 0);
+  $("#sb-stage").textContent = p.outcome.title ? `Removing ${p.outcome.title}` : "Removing…";
+  const gone = p.freed_bytes + p.recycled_bytes;
+  $("#sb-count").textContent = `${p.done} of ${p.total}${gone > 0 ? ` · ${formatSize(gone)}` : ""}`;
+  if (p.outcome.path) feedPush(p.outcome.path);
+}
+
+/// Each item as it finishes. The bar and feed are coalesced; retiring a row is not, because
+/// missing one would leave something on screen that is no longer there.
+function onCleanProgress(p) {
+  pendingClean = p;
+  schedule();
+  const id = p.outcome.finding_id;
+  if (p.outcome.error && !cleanErrors.has(id)) cleanErrors.set(id, p.outcome.error);
+  if (!p.finding_done) return;
+  if (p.finding_failed) markRowFailed(id, cleanErrors.get(id));
+  else retireRow(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +199,16 @@ function renderFinding(f, { inProjects = false } = {}) {
   if (f.if_deleted) ifDeleted.append(el("strong", null, "If you remove it: "), document.createTextNode(f.if_deleted));
   else ifDeleted.remove();
 
+  fillItems(node, f);
+  return node;
+}
+
+/// The paths a finding covers. Redrawn rather than patched, because a clean-up can take some of a
+/// finding's paths and leave others: a row that survived would otherwise still list what has gone,
+/// with a "Show in …" button pointing at a path that is no longer there.
+function fillItems(node, f) {
   const items = node.querySelector(".items");
+  items.replaceChildren();
   for (const it of f.items) {
     const li = el("li", "item");
     const path = el("span", "path", it.path);
@@ -122,7 +220,6 @@ function renderFinding(f, { inProjects = false } = {}) {
     li.append(path, meta, reveal);
     items.append(li);
   }
-  return node;
 }
 
 function renderResults(report) {
@@ -140,8 +237,12 @@ function renderResults(report) {
     const all = el("button", "link select-all", "Select all");
     all.type = "button";
     all.addEventListener("click", () => {
-      const allSelected = tierFindings.every((f) => selected.has(f.id));
-      for (const f of tierFindings) allSelected ? selected.delete(f.id) : selected.add(f.id);
+      // Off the live rows, not the list captured when this was rendered: rows retire as a
+      // clean-up confirms them, and a stale id here would be sent to the next clean and come
+      // back as "Not in the last scan".
+      const ids = [...section.querySelectorAll(".finding")].map((n) => n.dataset.id);
+      const allSelected = ids.every((id) => selected.has(id));
+      for (const id of ids) allSelected ? selected.delete(id) : selected.add(id);
       syncCheckboxes();
       updateSelectionBar();
     });
@@ -177,6 +278,113 @@ function renderProjects(report, results) {
   for (const f of projectFindings) list.append(renderFinding(f, { inProjects: true }));
   section.append(list);
   results.append(section);
+}
+
+/// Totals as `scan.rs` computes them: project findings counted apart from the three tiers.
+///
+/// Worked out here as well as in Rust so the headline numbers can follow rows off the screen
+/// during a clean, instead of contradicting the list for a few seconds.
+function computeTotals(list) {
+  const general = list.filter((f) => f.category !== "projects");
+  const totals = ["safe", "leftover", "your_call"].map((tier) => {
+    const of = general.filter((f) => f.tier === tier);
+    return { tier, bytes: of.reduce((sum, f) => sum + f.bytes, 0), count: of.length };
+  });
+  const projects = list.filter((f) => f.category === "projects");
+  return { totals, projects: { bytes: projects.reduce((sum, f) => sum + f.bytes, 0), count: projects.length } };
+}
+
+function refreshTotals(current) {
+  const { totals, projects } = computeTotals(current.findings);
+  current.totals = totals;
+  current.projects = projects;
+  renderSummary(current);
+  for (const total of totals) {
+    const node = document.querySelector(`#tier-${total.tier} .tier-total`);
+    if (node) node.textContent = formatSize(total.bytes);
+  }
+  const node = document.querySelector("#projects .tier-total");
+  if (node) node.textContent = formatSize(projects.bytes);
+}
+
+function row(id) {
+  return document.querySelector(`.finding[data-id="${CSS.escape(id)}"]`);
+}
+
+/// A tier or the projects section with nothing left in it has nothing to say.
+function pruneSection(list) {
+  if (!list || list.childElementCount > 0) return;
+  list.closest(".tier, .projects")?.remove();
+}
+
+/// This finding is gone: out of the page's model, out of the totals, and off the screen.
+function retireRow(id) {
+  findings.delete(id);
+  selected.delete(id);
+  if (shown) {
+    shown.findings = shown.findings.filter((f) => f.id !== id);
+    refreshTotals(shown);
+  }
+  updateSelectionBar();
+  const node = row(id);
+  if (!node) return;
+  // A concrete height to start from: there is nothing for max-height to animate out of otherwise.
+  node.style.maxHeight = `${node.offsetHeight}px`;
+  void node.offsetHeight;
+  node.classList.add("removing");
+  node.style.maxHeight = "0px";
+  const finish = () => {
+    if (!node.isConnected) return;
+    const list = node.parentElement;
+    node.remove();
+    pruneSection(list);
+  };
+  node.addEventListener("transitionend", finish, { once: true });
+  // Reduced motion turns the transition off, so transitionend never comes.
+  setTimeout(finish, 400);
+}
+
+/// Something in this finding was left behind, so the row stays and says why.
+function markRowFailed(id, reason) {
+  selected.delete(id);
+  updateSelectionBar();
+  const node = row(id);
+  if (!node) return;
+  node.classList.add("failed");
+  node.querySelector(".pick").checked = false;
+  if (!node.querySelector(".row-problem")) {
+    node.append(el("p", "row-problem", reason ?? "Some of this couldn't be removed."));
+  }
+}
+
+/// Take the report the backend just handed us as the truth, without rebuilding the list.
+///
+/// Rows have already left as their items were confirmed, so re-rendering would only throw away
+/// whatever the user had expanded and where they were scrolled. This corrects the sizes of what
+/// survived and drops anything an event didn't account for.
+function syncRows(current) {
+  shown = current;
+  findings = new Map(current.findings.map((f) => [f.id, f]));
+  for (const node of document.querySelectorAll(".finding")) {
+    const f = findings.get(node.dataset.id);
+    if (!f) {
+      retireRow(node.dataset.id);
+    } else {
+      node.querySelector(".size").textContent = formatSize(f.bytes);
+      fillItems(node, f);
+    }
+  }
+  for (const id of [...selected]) if (!findings.has(id)) selected.delete(id);
+  refreshTotals(current);
+  updateSelectionBar();
+}
+
+function adoptReport(current) {
+  shown = current;
+  findings = new Map(current.findings.map((f) => [f.id, f]));
+  renderSummary(current);
+  renderResults(current);
+  renderFooter(current);
 }
 
 function renderFooter(report) {
@@ -216,9 +424,14 @@ function selectedFindings() {
 function updateSelectionBar() {
   const chosen = selectedFindings();
   const bytes = chosen.reduce((sum, f) => sum + f.bytes, 0);
-  $("#selection-text").textContent = `${plural(chosen.length, "item")} selected · ${formatSize(bytes)}`;
-  $("#selection-bar").hidden = chosen.length === 0;
-  document.body.classList.toggle("has-selection", chosen.length > 0);
+  // The bar never leaves, so with nothing ticked it says what to do instead of "0 items".
+  $("#statusbar").classList.toggle("empty", chosen.length === 0);
+  $("#selection-text").textContent = chosen.length
+    ? `${plural(chosen.length, "item")} selected · ${formatSize(bytes)}`
+    : shown
+      ? "Nothing selected. Tick what you want to remove."
+      : "Scan to see what can be cleared.";
+  $("#clean").disabled = chosen.length === 0;
   syncCheckboxes();
 }
 
@@ -233,20 +446,20 @@ async function scan({ keepOutcome = false } = {}) {
   label.textContent = "Scanning…";
   if (!keepOutcome) $("#outcome").hidden = true;
   setStatus("Scanning your folders. This only reads; nothing is changed.");
+  resetProgress("Starting the scan…");
+  setMode("scanning");
   try {
-    const report = await invoke("scan");
-    findings = new Map(report.findings.map((f) => [f.id, f]));
+    const found = await invoke("scan");
     selected.clear();
     $("#intro").hidden = true;
-    renderSummary(report);
-    renderResults(report);
-    renderFooter(report);
-    updateSelectionBar();
-    const reclaimable = report.totals.reduce((sum, t) => sum + t.bytes, 0);
+    adoptReport(found);
+    const reclaimable = found.totals.reduce((sum, t) => sum + t.bytes, 0);
     setStatus(`Found ${formatSize(reclaimable)} you could reclaim. Open any item to see why it was flagged, then tick what you want to remove.`);
   } catch (e) {
     setStatus(`Scan failed: ${e}`);
   } finally {
+    setMode("idle");
+    updateSelectionBar();
     button.disabled = false;
     label.textContent = "Scan again";
   }
@@ -274,22 +487,30 @@ function confirmClean() {
   $("#confirm").showModal();
 }
 
+/// No scan afterwards: the backend hands back the report its own clean brought up to date, and
+/// the rows have already gone one by one as each was confirmed. The scan this used to do ran with
+/// the stale list still on screen, which made a finished clean-up look like it had done nothing.
 async function runClean() {
   $("#confirm").close();
   const ids = [...selected];
   const permanentSafe = $("#permanent").checked;
-  $("#clean").disabled = true;
-  setStatus(`Cleaning up ${plural(ids.length, "item")}…`);
+  cleanErrors.clear();
+  resetProgress(`Removing ${plural(ids.length, "item")}…`);
+  setMode("cleaning");
+  // Nothing else can be started while this runs: the Clean up button is behind the progress face,
+  // and a scan would pull the list out from under it.
+  $("#scan").disabled = true;
   try {
-    const result = await invoke("clean", { findingIds: ids, permanentSafe });
+    const { result, report: updated } = await invoke("clean", { findingIds: ids, permanentSafe });
     showOutcome(result);
+    syncRows(updated);
   } catch (e) {
-    setStatus(`Clean-up failed: ${e}`);
-    $("#clean").disabled = false;
-    return;
+    setStatus(`Clean-up failed: ${e}. Scan again before trying once more.`);
+  } finally {
+    $("#scan").disabled = false;
+    setMode("idle");
+    updateSelectionBar();
   }
-  $("#clean").disabled = false;
-  await scan({ keepOutcome: true });
 }
 
 /// Teach the page what this OS calls things, and fix up the sentences written in the HTML.
@@ -533,6 +754,11 @@ window.addEventListener("DOMContentLoaded", () => {
       if (!inside) dialog.close();
     });
   }
+  listen("scan-progress", (e) => {
+    pendingScan = e.payload;
+    schedule();
+  });
+  listen("clean-progress", (e) => onCleanProgress(e.payload));
   $("#scan").addEventListener("click", () => scan());
   $("#clean").addEventListener("click", confirmClean);
   $("#confirm-cancel").addEventListener("click", () => $("#confirm").close());
@@ -542,4 +768,5 @@ window.addEventListener("DOMContentLoaded", () => {
     selected.clear();
     updateSelectionBar();
   });
+  updateSelectionBar();
 });

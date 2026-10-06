@@ -40,33 +40,57 @@ impl Taken {
 
 type Signal = fn(&Ctx, &Taken) -> Vec<Finding>;
 
+/// A signal, with what the page says while it runs.
+///
+/// The label and the weight sit next to the function so they cannot drift apart from it — a bare
+/// array of function pointers has no name to check a parallel list against.
+pub struct SignalDef {
+    /// Stable key for the progress stage.
+    key: &'static str,
+    /// Shown while this signal runs.
+    label: &'static str,
+    /// Rough share of a scan's wall clock. Relative values are all that matter.
+    weight: u32,
+    run: Signal,
+}
+
 /// Signals in priority order: curated knowledge first, then targeted signals, then the
 /// general "nothing owns this" style signals.
-const SIGNALS: [Signal; 12] = [
-    known::find,
-    games::find_steam,
-    dev::find,
+const SIGNALS: [SignalDef; 12] = [
+    SignalDef { key: "known", label: "Checking the caches it knows about", weight: 7, run: known::find },
+    SignalDef { key: "steam", label: "Looking through your Steam library", weight: 1, run: games::find_steam },
+    SignalDef { key: "dev", label: "Looking through developer build folders", weight: 7, run: dev::find },
     // After `dev`, so a git repo that also holds a project file is described in git terms.
     // Before `orphans`, `find_saves`, `empty` and `stray`, whose guesses about these folders
     // are vaguer — running first means `Taken` mutes them.
-    projects::find,
-    downloads::find,
-    temp::find,
-    versions::find,
-    orphans::find,
-    games::find_saves,
-    empty::find,
-    stray::find,
-    cachedirs::find,
+    SignalDef { key: "projects", label: "Looking through your project folders", weight: 1, run: projects::find },
+    SignalDef { key: "downloads", label: "Looking through your Downloads", weight: 1, run: downloads::find },
+    SignalDef { key: "temp", label: "Looking for temporary files", weight: 1, run: temp::find },
+    SignalDef { key: "versions", label: "Looking for older versions", weight: 1, run: versions::find },
+    SignalDef { key: "orphans", label: "Looking for leftovers from apps you removed", weight: 2, run: orphans::find },
+    SignalDef { key: "saves", label: "Looking for saves from games you removed", weight: 1, run: games::find_saves },
+    SignalDef { key: "empty", label: "Looking for empty folders", weight: 1, run: empty::find },
+    SignalDef { key: "stray", label: "Looking for stray files", weight: 1, run: stray::find },
+    SignalDef { key: "cachedirs", label: "Looking for app caches and logs", weight: 1, run: cachedirs::find },
 ];
 
 pub use projects::find_projects;
 
+/// The signals as progress stages, in the order they run.
+pub fn stages() -> Vec<crate::progress::Stage> {
+    SIGNALS
+        .iter()
+        .map(|s| crate::progress::Stage { key: s.key, label: s.label, weight: s.weight })
+        .collect()
+}
+
 pub fn run_all(ctx: &Ctx) -> Vec<Finding> {
     let mut taken = Taken::default();
     let mut all = Vec::new();
-    for signal in SIGNALS {
-        let found = signal(ctx, &taken);
+    for signal in &SIGNALS {
+        ctx.progress.stage(signal.key);
+        let found = (signal.run)(ctx, &taken);
+        ctx.progress.tally(&found);
         taken.add(&found);
         all.extend(found);
     }

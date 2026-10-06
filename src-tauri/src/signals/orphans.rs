@@ -32,9 +32,11 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             && !taken.covers(d)
     });
 
+    ctx.progress.units(candidates.len());
     candidates
         .par_iter()
         .filter_map(|(dir, kind)| {
+            ctx.progress.examining(dir);
             let name = fsutil::file_name(dir);
             if ctx.inv.owner_of(&name).is_some()
                 || ctx.inv.exe_inside(dir).is_some()

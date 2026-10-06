@@ -20,9 +20,13 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
         .filter(|(p, _)| !taken.covers(p))
         .map(|(p, _)| p)
         .collect();
+    ctx.progress.units(entries.len());
     let old: Vec<_> = entries
         .par_iter()
-        .map(|p| (p, fsutil::usage(p)))
+        .map(|p| {
+            ctx.progress.examining(p);
+            (p, fsutil::usage(p))
+        })
         .filter(|(_, u)| age_days(ctx, u.newest) >= MIN_AGE_DAYS)
         .collect();
 

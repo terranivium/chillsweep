@@ -19,6 +19,43 @@ the commit that renamed a heading would itself bump the count and make that head
 
 ## Unreleased
 
+- **ChillSweep will never offer anything that holds credentials or local settings**, wherever it
+  finds it. A `.env` and its variants, SSH and signing keys, `.netrc`, `.npmrc`, credentials and
+  service-account files, keystores and Terraform state are now off limits by name, at any depth, in
+  any folder — including inside a code repository, where a project's own `.gitignore` used to be
+  treated as permission enough. A git-ignored folder nothing recognises is also left alone if one of
+  those is sitting directly inside it.
+- **ChillSweep now checks that dependencies really can be reinstalled before offering to remove
+  them.** A `node_modules`, `.venv`, `venv`, `vendor`, `Pods` or `Carthage` folder is only offered
+  when the thing that rebuilds it is still beside it — a `package.json`, a `requirements.txt` or
+  `pyproject.toml`, a lockfile, a `Podfile`. Without one, that folder is the only copy of what's in
+  it, and "reinstall the dependencies" was advice that would have failed.
+- A git-ignored folder called `env` is no longer assumed to be a Python virtual environment. It's
+  still offered, but described as local files that can't be recreated from the repo, rather than as
+  dependencies you can reinstall.
+- The Trash itself is no longer offered for removal. An empty Trash used to turn up in the list of
+  empty folders, which is never what anyone means — and it's where ChillSweep puts what it removes.
+- ChillSweep now notices folders your own `.git/info/exclude` lists, not just the ones in the
+  project's `.gitignore`. Previously those were only picked up on Windows.
+- **A scan now shows what it's doing.** A bar along the bottom fills as it goes, names the step it's
+  on ("Looking through your project folders"), counts what it has found so far, and lists the folders
+  it's looking at as it reaches them. A long scan no longer looks like a frozen window.
+- **Cleaning up shows its progress, and items leave the list as they go.** Each row disappears the
+  moment what it covers has actually been removed, with a running count and total along the bottom.
+  Anything that couldn't be removed stays put and says why, instead of vanishing silently.
+- **Cleaning up no longer re-scans afterwards.** It used to run a second full scan while the old list
+  was still on screen, so everything you had just removed sat there as though nothing had happened.
+  The list is now corrected directly, which is instant, and you can clean up again straight away.
+- **The bar along the bottom stays put.** It shows what you've selected and the Clean up button
+  wherever you are in a long list, rather than only appearing once something is ticked.
+- The dock icon (or the taskbar button on Windows) fills up while a scan or a clean-up runs, so you
+  can leave ChillSweep working in the background and still see how far along it is.
+- The scan no longer says Steam wasn't found. Not having a program installed is the normal case, and
+  saying so pushed the notes that do need acting on further down.
+- **Scanning is a lot faster.** Working out whether a folder is empty no longer measures everything
+  inside it first — it stops at the first file it finds, and checks folders side by side rather than
+  one at a time. On a machine with a few large folders in the usual places that alone cut a scan
+  from about 75 seconds to about 45.
 ## 1.21.0 — 2026-10-03
 
 - **ChillSweep now runs on macOS.** Signed and notarized, so it opens without warnings. It works out

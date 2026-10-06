@@ -21,6 +21,7 @@ use rayon::prelude::*;
 
 use super::{age_days, finding, item, Taken};
 use crate::fsutil::{self, Usage};
+use crate::progress::Reporter;
 use crate::report::{Category, Confidence, Finding, Tier};
 use crate::rules::{ProjectKind, Regenerable, Rules};
 use crate::roots::Roots;
@@ -46,15 +47,20 @@ const STALE_DAYS: u64 = 365;
 
 /// Every project folder on the machine, as `(path, index into rules.project_kind)`.
 ///
-/// Called once from `Ctx::new` rather than from `find` below, so that every signal can ask what
-/// a folder belongs to — including the ones that run before this one.
-pub fn find_projects(roots: &Roots, rules: &Rules) -> Vec<(PathBuf, usize)> {
+/// Shared through `Ctx` rather than found by `find` below, so that every signal can ask what a
+/// folder belongs to — including the ones that run before this one.
+pub fn find_projects(roots: &Roots, rules: &Rules, progress: &Reporter) -> Vec<(PathBuf, usize)> {
     if rules.project_kind.is_empty() {
         return Vec::new();
     }
     let mut out = Vec::new();
-    for start in roots.project_search_roots() {
+    // The walk has no total to count towards, so the bar fills one search root at a time while
+    // the feed shows where it actually is.
+    let starts = roots.project_search_roots();
+    progress.units(starts.len());
+    for start in starts {
         fsutil::walk_dirs(&start, DEPTH, |dir, depth| {
+            progress.showing(dir);
             // Depth 0 is the search root itself — `~/Downloads`, `~/Documents`, `~/Music`. A
             // single stray project file dropped into one of those must never turn the whole
             // folder into "a project", which would put everything in it up for removal.
@@ -71,6 +77,7 @@ pub fn find_projects(roots: &Roots, rules: &Rules) -> Vec<(PathBuf, usize)> {
                 None => true,
             }
         });
+        progress.counted();
     }
     out
 }
@@ -94,9 +101,11 @@ fn regenerable_parts(ctx: &Ctx, taken: &Taken, projects: &[(PathBuf, &ProjectKin
     // One entry per (kind, part), gathering every project that has it.
     let mut groups: Vec<PartGroup> = Vec::new();
 
+    ctx.progress.units(projects.len());
     let hits: Vec<PartHit> = projects
         .par_iter()
         .flat_map_iter(|(root, kind)| {
+            ctx.progress.examining(root);
             let mut found = Vec::new();
             for (path, md) in fsutil::children(root) {
                 let name = fsutil::file_name(&path);
@@ -162,9 +171,11 @@ fn regenerable_parts(ctx: &Ctx, taken: &Taken, projects: &[(PathBuf, &ProjectKin
 // ── Projects that were created and never used ───────────────────────────────────
 
 fn unused_projects(ctx: &Ctx, taken: &Taken, projects: &[(PathBuf, &ProjectKind)]) -> Vec<Finding> {
+    ctx.progress.units(projects.len());
     let found: Vec<Found> = projects
         .par_iter()
         .filter_map(|(root, kind)| {
+            ctx.progress.examining(root);
             // Only ask "was this ever used?" of tools that have somewhere to put content. For a
             // LaTeX document or a `.blend`, the project file is the work.
             if kind.content.is_empty() || taken.covers(root) || !ctx.may_remove(root, true) || has_content(root, kind) {
@@ -240,9 +251,11 @@ fn holds_media(root: &Path) -> bool {
 // ── Projects nobody has opened in a long time ───────────────────────────────────
 
 fn stale_projects(ctx: &Ctx, taken: &Taken, projects: &[(PathBuf, &ProjectKind)]) -> Vec<Finding> {
+    ctx.progress.units(projects.len());
     let found: Vec<Found> = projects
         .par_iter()
         .filter_map(|(root, kind)| {
+            ctx.progress.examining(root);
             if kind.content.is_empty() || taken.covers(root) || !ctx.may_remove(root, true) {
                 return None;
             }
@@ -408,7 +421,7 @@ mod tests {
 
         let roots = Roots::for_test(tmp.path());
         let rules = Rules::load();
-        let found = find_projects(&roots, &rules);
+        let found = find_projects(&roots, &rules, &Reporter::silent());
         assert_eq!(found.len(), 2, "both sessions, not the folder holding them: {found:?}");
         assert!(found.iter().all(|(p, _)| p.ends_with("SongOne") || p.ends_with("SongTwo")));
     }

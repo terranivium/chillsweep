@@ -25,6 +25,13 @@ pub struct Rules {
     /// credentials, cloud sync, sandboxed app data, ChillSweep's own files. Nothing passes.
     #[serde(default)]
     pub never_touch: Vec<String>,
+    /// Names that are off limits wherever they appear, with `*` wildcards.
+    ///
+    /// The path lists above cannot express "a `.env`, in any repo, at any depth", because they are
+    /// matched as absolute paths and never expand a wildcard. This one is matched per path segment,
+    /// at the same level as `never_touch`, so `vouched` cannot look past it either.
+    #[serde(default)]
+    pub never_names: Vec<String>,
     pub system_names: Vec<String>,
     pub generic_names: Vec<String>,
     pub steam_internal: Vec<String>,
@@ -79,6 +86,23 @@ pub struct Regenerable {
 pub struct RestoreDir {
     pub name: String,
     pub how: String,
+    /// Files the command in `how` restores from. Any one of them beside the folder is enough.
+    ///
+    /// Empty means "always restorable", which is the old behaviour and fine for a folder whose
+    /// tool can rebuild it from nothing.
+    #[serde(default)]
+    pub needs: Vec<String>,
+}
+
+impl RestoreDir {
+    /// Can `how` actually be done in this project?
+    ///
+    /// A `.venv` is only "dependencies you can reinstall" while the project still records what was
+    /// in it. Without a requirements file or a lockfile the folder *is* the only copy, and calling
+    /// it restorable would be telling the user something untrue about what they are about to lose.
+    pub fn restorable_from(&self, project: &std::path::Path) -> bool {
+        self.needs.is_empty() || self.needs.iter().any(|n| project.join(n).exists())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +193,11 @@ impl Rules {
 
     pub fn is_generic_name(&self, name: &str) -> bool {
         self.generic_names.iter().any(|n| n.eq_ignore_ascii_case(name))
+    }
+
+    /// Off limits by name: credentials, keys, local configuration. See `never_names`.
+    pub fn is_never_name(&self, name: &str) -> bool {
+        self.never_names.iter().any(|p| crate::fsutil::wildcard(p, name))
     }
 
     /// The project kind whose marker `dir` holds, if any.

@@ -1,6 +1,7 @@
 pub mod clean;
 pub mod fsutil;
 pub mod inventory;
+pub mod progress;
 pub mod report;
 pub mod roots;
 pub mod rules;
@@ -8,9 +9,14 @@ pub mod scan;
 mod signals;
 mod titlebar;
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::window::{ProgressBarState, ProgressBarStatus};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+
+use crate::progress::{Reporter, ScanProgress};
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Default)]
@@ -23,29 +29,125 @@ struct AppState {
     pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
 }
 
+/// How often the dock or taskbar bar may be redrawn.
+///
+/// Far less often than the page: on Windows each call builds a COM taskbar object and on macOS it
+/// forces a redraw of the dock icon, while four a second is already more than anyone reads from an
+/// icon the size of a thumbnail.
+const OS_PROGRESS_MS: u64 = 250;
+
+/// The progress bar on the dock icon (macOS) or the taskbar button (Windows).
+///
+/// Tauri drives both from one call, so there is no platform code here. Clearing it is done on
+/// `Drop` so that it cannot be left behind by an early return or an error.
+struct OsProgress {
+    window: Option<WebviewWindow>,
+    base: Instant,
+    last_ms: AtomicU64,
+    /// Last whole percent sent, so repeats of the same number cost nothing.
+    last_percent: AtomicI64,
+}
+
+impl OsProgress {
+    fn new(app: &AppHandle) -> OsProgress {
+        OsProgress {
+            window: app.get_webview_window("main"),
+            base: Instant::now(),
+            last_ms: AtomicU64::new(0),
+            last_percent: AtomicI64::new(-1),
+        }
+    }
+
+    fn set(&self, percent: f32) {
+        let Some(window) = self.window.as_ref() else { return };
+        let whole = percent.clamp(0.0, 100.0).round() as i64;
+        if self.last_percent.load(Ordering::Relaxed) == whole {
+            return;
+        }
+        let now = self.base.elapsed().as_millis() as u64;
+        let last = self.last_ms.load(Ordering::Relaxed);
+        if now.saturating_sub(last) < OS_PROGRESS_MS {
+            return;
+        }
+        if self.last_ms.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_err() {
+            return;
+        }
+        self.last_percent.store(whole, Ordering::Relaxed);
+        let _ = window.set_progress_bar(ProgressBarState {
+            status: Some(ProgressBarStatus::Normal),
+            progress: Some(whole as u64),
+        });
+    }
+}
+
+impl Drop for OsProgress {
+    fn drop(&mut self) {
+        if let Some(window) = self.window.as_ref() {
+            let _ = window.set_progress_bar(ProgressBarState { status: Some(ProgressBarStatus::None), progress: None });
+        }
+    }
+}
+
 /// Scan the user's folders. Read-only: nothing is changed, nothing else is launched.
 #[tauri::command]
-async fn scan(state: State<'_, AppState>) -> Result<report::Report, String> {
-    let report = tauri::async_runtime::spawn_blocking(scan::run).await.map_err(|e| e.to_string())?;
+async fn scan(app: AppHandle, state: State<'_, AppState>) -> Result<report::Report, String> {
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        let os = Arc::new(OsProgress::new(&app));
+        let sink_app = app.clone();
+        let sink_os = Arc::clone(&os);
+        let reporter = Reporter::new(
+            progress::scan_stages(),
+            Arc::new(move |p: &ScanProgress| {
+                let _ = sink_app.emit("scan-progress", p);
+                sink_os.set(p.percent);
+            }),
+        );
+        scan::run_with_progress(reporter)
+        // `os` drops here, which clears the dock bar however the scan ended.
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     *state.last_report.lock().unwrap() = Some(report.clone());
     Ok(report)
 }
 
+/// A clean, and the report brought up to date by it.
+///
+/// The page renders from `report` instead of scanning again: the findings it holds are
+/// non-overlapping, so removing some of them cannot change the rest. See `clean::reconcile`.
+#[derive(serde::Serialize)]
+struct CleanResponse {
+    result: clean::CleanResult,
+    report: report::Report,
+}
+
 /// Remove the chosen findings from the last scan.
 #[tauri::command]
-async fn clean(state: State<'_, AppState>, finding_ids: Vec<String>, permanent_safe: bool) -> Result<clean::CleanResult, String> {
-    // Taking the report means a fresh scan is needed before cleaning again.
-    let report = state.last_report.lock().unwrap().take().ok_or("Scan first, then choose what to clean.")?;
-    let result = tauri::async_runtime::spawn_blocking(move || {
+async fn clean(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    finding_ids: Vec<String>,
+    permanent_safe: bool,
+) -> Result<CleanResponse, String> {
+    // Taking the report means nothing else can clean against it while this one runs. The version
+    // brought up to date by the clean goes back below, so the next clean needs no fresh scan.
+    let mut report = state.last_report.lock().unwrap().take().ok_or("Scan first, then choose what to clean.")?;
+    let (result, report) = tauri::async_runtime::spawn_blocking(move || {
+        let os = OsProgress::new(&app);
         let ctx = clean::guard_ctx();
-        let result = clean::clean(&report, &finding_ids, permanent_safe, &ctx);
+        let result = clean::clean(&report, &finding_ids, permanent_safe, &ctx, &|p| {
+            let _ = app.emit("clean-progress", p);
+            os.set(p.done as f32 / p.total.max(1) as f32 * 100.0);
+        });
         let _ = clean::append_history(&ctx.roots.app_data_dir(), &result);
-        result
+        clean::reconcile(&mut report, &result.outcomes);
+        (result, report)
     })
     .await
     .map_err(|e| e.to_string())?;
     *state.last_recycled.lock().unwrap() = Some((result.recycled_paths(), result.started_at));
-    Ok(result)
+    *state.last_report.lock().unwrap() = Some(report.clone());
+    Ok(CleanResponse { result, report })
 }
 
 /// Restore what the last clean sent to the Recycle Bin.

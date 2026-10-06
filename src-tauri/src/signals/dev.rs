@@ -44,11 +44,18 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
                 .map(move |d| (repo.clone(), d))
         })
         .filter(|(_, d)| !taken.covers(d))
+        // Vouched, because the repo's own `.gitignore` is the proof that gets these past
+        // `protected` — but the name guard underneath still applies. Checked here rather than
+        // left to `scan::run`'s backstop so nothing off limits is measured in the first place,
+        // the same way `empty`, `projects` and `cachedirs` do it.
+        .filter(|(_, d)| ctx.may_remove(d, true))
         .collect();
 
+    ctx.progress.units(candidates.len());
     candidates
         .par_iter()
         .filter_map(|(repo, dir)| {
+            ctx.progress.examining(dir);
             let u = fsutil::usage(dir);
             if u.bytes < MIN_BYTES {
                 return None;
@@ -56,6 +63,12 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             let name = fsutil::file_name(dir);
             let repo_name = fsutil::file_name(repo);
             let restore = ctx.rules.restore_dir.iter().find(|r| r.name.eq_ignore_ascii_case(&name));
+            // Recognised as restorable, but the project no longer records what to restore from —
+            // so this folder is the only copy. Leave it alone rather than offer it with an
+            // instruction that cannot work.
+            if restore.is_some_and(|r| !r.restorable_from(repo)) {
+                return None;
+            }
             let is_build = ctx.rules.build_dirs.iter().any(|b| b.eq_ignore_ascii_case(&name));
             // If this repo is also a recognised project, that knowledge is better than ours: a
             // Unity `Library` is an import cache the engine rebuilds, not mystery local data.
@@ -75,6 +88,13 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             } else if is_build {
                 (Tier::Safe, "Build output generated from the project's source.".to_string(), "Recreated the next time you build the project.".to_string())
             } else {
+                // Nothing recognises this folder, so there is no telling what is in it. The name
+                // guard in `refuse_location` only ever sees the folder's own name, so look one
+                // level in: if it holds something that looks like credentials or local settings,
+                // don't offer it at all.
+                if holds_secrets_inside(ctx, dir) {
+                    return None;
+                }
                 (
                     Tier::YourCall,
                     "Local files the project keeps out of git.".to_string(),
@@ -98,6 +118,15 @@ pub fn find(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
             Some(f)
         })
         .collect()
+}
+
+/// Does the top level of this folder hold something named like credentials or local settings?
+///
+/// Only asked of folders nothing recognises — a `build_dirs`, `restore_dir` or project part is
+/// already known to be rebuildable output, and reading inside every one of those would be work for
+/// no answer. One `read_dir`, after `fsutil::usage` has already walked the tree.
+fn holds_secrets_inside(ctx: &Ctx, dir: &Path) -> bool {
+    fsutil::children(dir).iter().any(|(p, _)| ctx.rules.is_never_name(&fsutil::file_name(p)))
 }
 
 /// Git repos within three levels of the home folder's top-level project folders.
@@ -134,7 +163,9 @@ fn load_gitignore(repo: &Path) -> Option<Gitignore> {
         return None;
     }
     b.add(root_ignore);
-    let exclude = repo.join(r".git\info\exclude");
+    // Built up a component at a time: a literal `.git\info\exclude` is one filename containing
+    // backslashes anywhere but Windows, so this never found anything on macOS.
+    let exclude = repo.join(".git").join("info").join("exclude");
     if exclude.is_file() {
         b.add(exclude);
     }
@@ -143,7 +174,12 @@ fn load_gitignore(repo: &Path) -> Option<Gitignore> {
 
 #[cfg(test)]
 mod tests {
-    use super::load_gitignore;
+    use super::{find, load_gitignore, MIN_BYTES};
+    use crate::inventory::Inventory;
+    use crate::roots::Roots;
+    use crate::rules::Rules;
+    use crate::scan::Ctx;
+    use crate::signals::Taken;
 
     #[test]
     fn matches_ignored_dirs() {
@@ -156,5 +192,78 @@ mod tests {
         assert!(gi.matched(repo.path().join("node_modules"), true).is_ignore());
         assert!(gi.matched(repo.path().join("dist"), true).is_ignore());
         assert!(!gi.matched(repo.path().join("src"), true).is_ignore());
+    }
+
+    /// Local excludes live in `.git/info/exclude`, and a path built with backslashes found them
+    /// only on Windows.
+    #[test]
+    fn local_excludes_are_read() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join(".gitignore"), "dist/\n").unwrap();
+        std::fs::create_dir_all(repo.path().join(".git").join("info")).unwrap();
+        std::fs::write(repo.path().join(".git").join("info").join("exclude"), "scratch/\n").unwrap();
+        let gi = load_gitignore(repo.path()).unwrap();
+        assert!(gi.matched(repo.path().join("scratch"), true).is_ignore(), "a locally excluded folder counts too");
+    }
+
+    /// A virtualenv is only "dependencies you can reinstall" while the project still records what
+    /// was in it. With a lockfile it is hundreds of megabytes anyone can rebuild; without one the
+    /// folder is the only copy, and offering it alongside "reinstall requirements" would be
+    /// promising something that cannot be done.
+    #[test]
+    fn a_virtualenv_is_offered_only_when_it_can_be_rebuilt() {
+        let home = tempfile::tempdir().unwrap();
+        let big = vec![0u8; (MIN_BYTES + 1) as usize];
+        let offered_for = |repo_name: &str, manifest: Option<&str>| {
+            let repo = home.path().join(repo_name);
+            std::fs::create_dir_all(repo.join(".git")).unwrap();
+            std::fs::write(repo.join(".gitignore"), ".venv\n").unwrap();
+            std::fs::create_dir(repo.join(".venv")).unwrap();
+            std::fs::write(repo.join(".venv").join("payload.bin"), &big).unwrap();
+            if let Some(m) = manifest {
+                std::fs::write(repo.join(m), b"[project]\n").unwrap();
+            }
+            let ctx = Ctx::new(Roots::for_test(home.path()), Rules::load(), Inventory::default());
+            find(&ctx, &Taken::default())
+                .iter()
+                .flat_map(|f| f.items.iter().map(|i| i.path.clone()))
+                .any(|p| p.contains(repo_name) && p.ends_with(".venv"))
+        };
+        assert!(offered_for("locked", Some("uv.lock")), "a lockfile means it rebuilds, so offer it");
+        assert!(offered_for("declared", Some("requirements.txt")), "a requirements file is enough too");
+        assert!(!offered_for("orphaned", None), "nothing to reinstall from, so it must not be offered");
+    }
+
+    /// The whole point of the git-ignore signal is to offer build output — and never to offer
+    /// somewhere secrets live, even though the repo's own `.gitignore` names both and the signal
+    /// vouches past `protected` for both.
+    #[test]
+    fn git_ignored_secrets_are_not_offered_but_build_output_is() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = home.path().join("code").join("proj");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join(".gitignore"), ".env\nbuild\nscratch\n").unwrap();
+
+        // Each candidate has to clear the signal's size floor to be considered at all.
+        let big = vec![0u8; (MIN_BYTES + 1) as usize];
+        for dir in [".env", "build", "scratch"] {
+            std::fs::create_dir(repo.join(dir)).unwrap();
+            std::fs::write(repo.join(dir).join("payload.bin"), &big).unwrap();
+        }
+        // `scratch` is a folder nothing recognises that happens to hold a secret.
+        std::fs::write(repo.join("scratch").join(".env"), b"TOKEN=shh").unwrap();
+
+        let ctx = Ctx::new(Roots::for_test(home.path()), Rules::load(), Inventory::default());
+        let offered: Vec<String> = find(&ctx, &Taken::default())
+            .iter()
+            .flat_map(|f| f.items.iter().map(|i| i.path.clone()))
+            .collect();
+
+        assert!(offered.iter().any(|p| p.ends_with("build")), "build output is what this signal is for; got {offered:?}");
+        assert!(!offered.iter().any(|p| p.contains(".env")), "a git-ignored .env must never be offered; got {offered:?}");
+        assert!(
+            !offered.iter().any(|p| p.ends_with("scratch")),
+            "an unrecognised folder holding a .env must not be offered either; got {offered:?}",
+        );
     }
 }

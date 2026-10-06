@@ -76,9 +76,11 @@ pub fn find_saves(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
         })
         .collect();
 
+    ctx.progress.units(candidates.len());
     candidates
         .par_iter()
         .filter_map(|(dir, label)| {
+            ctx.progress.examining(dir);
             let name = fsutil::file_name(dir);
             if ctx.inv.owner_of(&name).is_some() || ctx.inv.exe_inside(dir).is_some() {
                 return None;

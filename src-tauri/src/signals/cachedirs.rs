@@ -27,8 +27,10 @@ fn nested_caches(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
         .filter(|d| !ctx.rules.is_system_name(&fsutil::file_name(d)) && ctx.may_remove(d, false) && !taken.covers(d))
         .collect();
 
+    ctx.progress.units(apps.len());
     apps.par_iter()
         .filter_map(|app| {
+            ctx.progress.examining(app);
             let app_name = fsutil::file_name(app);
             // Look one and two levels down: `Discord\Cache`, `Foo\User Data\Cache`.
             let mut hits = Vec::new();
@@ -75,9 +77,12 @@ fn whole_cache_dirs(ctx: &Ctx, taken: &Taken) -> Vec<Finding> {
     if cfg!(windows) {
         return Vec::new();
     }
-    fsutil::child_dirs(&ctx.roots.cache)
+    let caches = fsutil::child_dirs(&ctx.roots.cache);
+    ctx.progress.units(caches.len());
+    caches
         .par_iter()
         .filter_map(|dir| {
+            ctx.progress.examining(dir);
             let name = fsutil::file_name(dir);
             if ctx.rules.is_system_name(&name) || !ctx.may_remove(dir, false) || taken.covers(dir) || ctx.is_owned(dir) {
                 return None;

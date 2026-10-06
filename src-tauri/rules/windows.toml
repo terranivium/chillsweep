@@ -68,6 +68,23 @@ never_touch = [
   '%LOCALAPPDATA%\1Password',
 ]
 
+# Names that are off limits wherever they turn up, as opposed to `never_touch` above which is
+# absolute paths. Matched against every segment of a path, with `*` wildcards, and checked at the
+# same level as `never_touch`: a signal with positive proof of what it found (see
+# `Finding::vouched`) still cannot offer something that holds credentials or local configuration.
+#
+# This is the only list that can reach inside a repo. `protected` and `never_touch` are paths, and
+# a `.env` sits at an arbitrary depth in an arbitrary project, so no path could ever name it.
+never_names = [
+  '.env', '.env.*', '*.env',
+  '.netrc', '_netrc', '.npmrc', '.pypirc', '.git-credentials', '.htpasswd',
+  'credentials', 'credentials.json', 'service-account*.json',
+  'secrets', 'secrets.*', '*.secrets.*',
+  'id_rsa*', 'id_ed25519*', 'id_ecdsa*', '*.pem', '*.ppk',
+  '*.keystore', '*.jks', '*.p12', '*.pfx',
+  'terraform.tfstate*', '.terraformrc',
+]
+
 # Top-level AppData folders that belong to Windows itself. Never judged as leftovers.
 system_names = [
   'Microsoft', 'Packages', 'Temp', 'Programs', 'Application Data', 'History',
@@ -117,24 +134,31 @@ build_dirs = [
 ]
 
 # git-ignored folders that are safe to remove but need a command to restore.
+#
+# `needs` lists the files that command restores *from*. At least one has to sit beside the folder,
+# or the promise in `how` is one the project can't keep — a `.venv` with no requirements file and no
+# lockfile cannot be rebuilt, so it is not offered at all rather than offered with a reinstall
+# instruction that would fail.
 [[restore_dir]]
 name = 'node_modules'
 how = 'Run `npm install` (or your package manager) to restore it.'
+needs = ['package.json']
 [[restore_dir]]
 name = '.venv'
 how = 'Recreate the virtual environment and reinstall requirements.'
+needs = ['requirements.txt', 'requirements-dev.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock', 'poetry.lock', 'uv.lock', 'setup.py', 'setup.cfg', 'environment.yml']
 [[restore_dir]]
 name = 'venv'
 how = 'Recreate the virtual environment and reinstall requirements.'
-[[restore_dir]]
-name = 'env'
-how = 'Recreate the virtual environment and reinstall requirements.'
+needs = ['requirements.txt', 'requirements-dev.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock', 'poetry.lock', 'uv.lock', 'setup.py', 'setup.cfg', 'environment.yml']
 [[restore_dir]]
 name = 'vendor'
 how = 'Reinstall dependencies with your package manager.'
+needs = ['composer.json', 'composer.lock', 'go.mod', 'Gemfile', 'Gemfile.lock']
 [[restore_dir]]
 name = 'Pods'
 how = 'Run `pod install` to restore it.'
+needs = ['Podfile', 'Podfile.lock']
 
 # ---------------------------------------------------------------------------
 # Project folders.

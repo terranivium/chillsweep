@@ -74,19 +74,37 @@
       <footer id="footer" class="footer" hidden></footer>
     </main>
 
-    <div id="selection-bar" class="selection-bar" hidden>
-      <span id="selection-text"></span>
-      <!-- This title and the About text below are written platform-neutrally and then replaced by
-           applyPlatform() in main.js, which knows whether this build says Recycle Bin or Trash.
-           Neutral defaults mean no frame of the wrong wording before the script runs. -->
-      <label class="toggle" title="Safe-to-clear items rebuild themselves, so they can skip the bin. Everything else always goes there first.">
-        <input id="permanent" type="checkbox" checked />
-        Delete safe-to-clear items permanently
-      </label>
-      <button id="clear-selection" class="secondary" type="button">Clear</button>
-      <button id="clean" class="primary" type="button">
-        <i class="ph ph-broom" aria-hidden="true"></i><span class="label">Clean up</span>
-      </button>
+    <!-- Always on screen, so the count and the action stay reachable however long the list is.
+         Shows what's selected when idle and live progress while scanning or cleaning. -->
+    <div id="statusbar" class="statusbar" data-mode="idle">
+      <div class="sb-idle">
+        <span id="selection-text"></span>
+        <!-- This title and the About text above are written platform-neutrally and then replaced by
+             applyPlatform() in main.js, which knows whether this build says Recycle Bin or Trash.
+             Neutral defaults mean no frame of the wrong wording before the script runs. -->
+        <label id="permanent-toggle" class="toggle" title="Safe-to-clear items rebuild themselves, so they can skip the bin. Everything else always goes there first.">
+          <input id="permanent" type="checkbox" checked />
+          Delete safe-to-clear items permanently
+        </label>
+        <button id="clear-selection" class="secondary" type="button">Clear</button>
+        <button id="clean" class="primary" type="button">
+          <i class="ph ph-broom" aria-hidden="true"></i><span class="label">Clean up</span>
+        </button>
+      </div>
+
+      <div class="sb-busy">
+        <div class="sb-head">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="sb-stage" class="sb-stage"></span>
+          <span id="sb-count" class="sb-count"></span>
+        </div>
+        <div id="sb-bar" class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div id="sb-fill" class="progress-fill"></div>
+        </div>
+        <!-- What's being looked at right now. Newest line at the bottom, older ones fading off the
+             top: ambient proof that a long scan is moving rather than stuck. -->
+        <div id="sb-feed" class="sb-feed" aria-hidden="true"></div>
+      </div>
     </div>
 
     <dialog id="confirm" class="dialog confirm">

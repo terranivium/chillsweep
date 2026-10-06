@@ -119,6 +119,39 @@ pub fn usage(path: &Path) -> Usage {
     u
 }
 
+/// Whether a folder tree holds no files at all, and its usage if it doesn't.
+///
+/// `usage` answers this too, but only after measuring every file in the tree — and the answer is
+/// settled by the first one found. For a folder with a lot in it that is the difference between a
+/// full recursive walk and a single `read_dir`.
+///
+/// `None` for anything that is not an empty folder: a file, a reparse point, or a tree with a file
+/// somewhere inside. Reparse points within the tree are skipped rather than counted, exactly as
+/// `usage` skips them.
+pub fn empty_tree(path: &Path) -> Option<Usage> {
+    let md = fs::symlink_metadata(path).ok()?;
+    if is_reparse(&md) || !md.is_dir() {
+        return None;
+    }
+    let mut u = Usage { newest: mtime(&md), is_dir: true, ..Usage::default() };
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for entry in rd.flatten() {
+            let Ok(md) = entry.metadata() else { continue };
+            if is_reparse(&md) {
+                continue;
+            }
+            if !md.is_dir() {
+                return None;
+            }
+            u.newest = u.newest.max(mtime(&md));
+            stack.push(entry.path());
+        }
+    }
+    Some(u)
+}
+
 /// Children of a directory with their metadata, skipping reparse points.
 pub fn children(dir: &Path) -> Vec<(PathBuf, Metadata)> {
     let Ok(rd) = fs::read_dir(dir) else { return Vec::new() };
@@ -285,4 +318,42 @@ mod tests {
         // A trailing separator on the outer path must not change the answer.
         assert!(is_within(&abs(&["a", "b"]), &format!("{}{SEP}", abs(&["a"]))));
     }
+
+    /// `empty_tree` decides whether a folder is offered for removal, so a wrong "yes" would mean
+    /// deleting something with files in it. It has to agree with `usage` on every shape.
+    #[test]
+    fn empty_tree_agrees_with_usage() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let bare = root.join("bare");
+        fs::create_dir(&bare).unwrap();
+        assert!(empty_tree(&bare).is_some(), "an empty folder is empty");
+
+        let nested = root.join("nested");
+        fs::create_dir_all(nested.join("a/b/c")).unwrap();
+        assert!(empty_tree(&nested).is_some(), "folders all the way down and no files is still empty");
+
+        let shallow = root.join("shallow");
+        fs::create_dir(&shallow).unwrap();
+        fs::write(shallow.join("f.txt"), b"x").unwrap();
+        assert!(empty_tree(&shallow).is_none(), "a file at the top means not empty");
+
+        let deep = root.join("deep");
+        fs::create_dir_all(deep.join("a/b/c")).unwrap();
+        fs::write(deep.join("a/b/c/f.txt"), b"x").unwrap();
+        assert!(empty_tree(&deep).is_none(), "a file buried deep still means not empty");
+
+        let file = root.join("plain.txt");
+        fs::write(&file, b"x").unwrap();
+        assert!(empty_tree(&file).is_none(), "a file is not an empty folder");
+
+        assert!(empty_tree(&root.join("missing")).is_none(), "nothing there is not an empty folder");
+
+        // The whole point of the function: the same answer as `usage`, without measuring.
+        for p in [&bare, &nested, &shallow, &deep, &file] {
+            assert_eq!(empty_tree(p).is_some(), usage(p).files == 0 && p.is_dir(), "disagreed about {p:?}");
+        }
+    }
+
 }

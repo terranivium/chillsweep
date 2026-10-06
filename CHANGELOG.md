@@ -19,6 +19,8 @@ the commit that renamed a heading would itself bump the count and make that head
 
 ## Unreleased
 
+## 1.21.0 — 2026-10-03
+
 - **ChillSweep now runs on macOS.** Signed and notarized, so it opens without warnings. It works out
   what's installed from your app bundles and installer receipts, and knows where macOS keeps app data,
   caches, logs and reopened-window state.

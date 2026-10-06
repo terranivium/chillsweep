@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
+    "dev": "node build-scripts/dev.mjs",
     "test": "node --test \"build-scripts/*.test.mjs\"",
     "build": "node build-scripts/pack.mjs",
     "release": "node build-scripts/pack.mjs --release && node build-scripts/publish.mjs && node build-scripts/release-notes.mjs",
